@@ -1,0 +1,7 @@
+mlx>=0.18.0
+mlx-lm>=0.18.0
+safetensors>=0.4.0
+torch>=2.0.0
+transformers>=4.36.0
+huggingface_hub>=0.20.0
+numpy>=1.24.0

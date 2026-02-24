@@ -1,0 +1,29 @@
+# Build artifacts
+.build/
+build/
+DerivedData/
+
+# Converted model weights (large binaries)
+converted/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# Xcode
+xcuserdata/
+*.xcscmblueprint
+
+# macOS
+.DS_Store
+
+# Profiling
+*.profraw
+
+# Claude Code
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+.venv/

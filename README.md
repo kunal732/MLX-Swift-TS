@@ -47,79 +47,79 @@ print(prediction.quantiles)  // quantile forecasts (when available)
 
 | Model | Origin | Architecture | Output | Context | HuggingFace ID |
 |-------|--------|-------------|--------|---------|----------------|
-| **[Toto](https://huggingface.co/Datadog/Toto-Open-Base-1.0)** | Datadog | Patch transformer + spacewise attention | Mixture of Student-T | 4 096 | `Datadog/Toto-Open-Base-1.0` |
+| **[Toto](https://huggingface.co/Datadog/Toto-Open-Base-1.0)** | Datadog | Patch transformer + space-wise attention | Student-t mixture | 4 096 | `Datadog/Toto-Open-Base-1.0` |
 | **[TimesFM 2.5](https://huggingface.co/google/timesfm-2.5-200m-pytorch)** | Google | Decoder-only transformer | 9 quantiles | 16 384 | `google/timesfm-2.5-200m-pytorch` |
 | **[Chronos](https://huggingface.co/amazon/chronos-t5-base)** | Amazon | T5 encoder-decoder, tokenized | Sampled quantiles | 512 | `amazon/chronos-t5-base` |
 | **[Chronos-2](https://huggingface.co/autogluon/chronos-2-synth)** | AutoGluon | T5 encoder-only + RoPE | 13 quantiles | 8 192 | `autogluon/chronos-2-synth` |
-| **[Lag-Llama](https://huggingface.co/time-series-foundation-models/Lag-Llama)** | ServiceNow | Llama-style, lag features | Student-T distribution | 32 | `time-series-foundation-models/Lag-Llama` |
+| **[Lag-Llama](https://huggingface.co/time-series-foundation-models/Lag-Llama)** | Rasul et al. | Llama-style, lag features | Student-t distribution | 32 | `time-series-foundation-models/Lag-Llama` |
 | **[FlowState](https://huggingface.co/ibm-granite/granite-timeseries-flowstate-r1)** | IBM | S5 SSM + Legendre decoder | 9 quantiles | 2 048 | `ibm-granite/granite-timeseries-flowstate-r1` |
-| **[Kairos](https://huggingface.co/mldi-lab/Kairos_50m)** | MLDI-Lab | Mixture-of-experts + dynamic patching | 9 quantiles | 2 048 | `mldi-lab/Kairos_50m` |
+| **[Kairos](https://huggingface.co/mldi-lab/Kairos_50m)** | MLDI-Lab | T5 encoder-decoder, MoS dynamic patching | 9 quantiles | 2 048 | `mldi-lab/Kairos_50m` |
 | **[TiRex](https://huggingface.co/NX-AI/TiRex)** | NX-AI | sLSTM with exponential gating | 13 quantiles | 2 048 | `NX-AI/TiRex` |
 
 ## Converting Models
 
-The conversion script downloads a HuggingFace checkpoint, remaps weights to the MLX layout, and saves `config.json` + `.safetensors` files.
+The conversion script downloads a HuggingFace checkpoint, remaps weights to the MLX layout, and saves `config.json` + `.safetensors` files. The CLI flags follow the [mlx-lm](https://github.com/ml-explore/mlx-examples/tree/main/llms/mlx_lm) convention.
 
 ```bash
 # Install Python dependencies
 pip install -r Scripts/requirements.txt
 
-# Convert any supported model
-python Scripts/convert_ts_model.py --model <HF_ID> --output <DIR>
+# Convert a model
+python Scripts/convert_ts_model.py --hf-path Datadog/Toto-Open-Base-1.0 --mlx-path converted/toto
+
+# Convert and quantize to 4-bit in one step
+python Scripts/convert_ts_model.py \
+  --hf-path Datadog/Toto-Open-Base-1.0 \
+  --mlx-path converted/toto-4bit \
+  -q --q-bits 4
 ```
 
-### All eight models
+The model type is auto-detected from the HuggingFace ID. You can also pass `--q-bits 2` or `--q-bits 8`, and `--q-group-size` to control the quantization group size (default: 64).
 
-```bash
-python Scripts/convert_ts_model.py --model Datadog/Toto-Open-Base-1.0              --output converted/toto
-python Scripts/convert_ts_model.py --model google/timesfm-2.5-200m-pytorch         --output converted/timesfm
-python Scripts/convert_ts_model.py --model amazon/chronos-t5-base                  --output converted/chronos
-python Scripts/convert_ts_model.py --model autogluon/chronos-2-synth               --output converted/chronos2
-python Scripts/convert_ts_model.py --model time-series-foundation-models/Lag-Llama  --output converted/lag-llama
-python Scripts/convert_ts_model.py --model ibm-granite/granite-timeseries-flowstate-r1 --output converted/flowstate
-python Scripts/convert_ts_model.py --model mldi-lab/Kairos_50m                     --output converted/kairos
-python Scripts/convert_ts_model.py --model NX-AI/TiRex                             --output converted/tirex
-```
+### Upload to HuggingFace
 
-### Quantization
-
-Append `--quantize --bits 4` (or `2`, `8`) to any command above:
+Add `--upload-repo` to push the converted model to HuggingFace Hub with an auto-generated model card:
 
 ```bash
 python Scripts/convert_ts_model.py \
-  --model Datadog/Toto-Open-Base-1.0 \
-  --output converted/toto-4bit \
-  --quantize --bits 4
+  --hf-path Datadog/Toto-Open-Base-1.0 \
+  -q --q-bits 4 \
+  --upload-repo mlx-community/Toto-Open-Base-1.0-4bit
 ```
 
 ## Data Format
 
 ### Input - `TimeSeriesInput`
 
-All models accept a common input with shape **`[B, V, T]`** (batch, variates, time steps):
+All models accept a common input with shape **`[B, V, T]`** (batch, variates, time steps).
+
+**Univariate** means a single variable over time -- for example, hourly CPU usage of one server or daily closing price of one stock. Most time series forecasting starts here.
+
+**Multivariate** means multiple related variables measured over the same time period -- for example, CPU usage *and* memory usage of the same server, or temperature *and* humidity from the same sensor. The model can learn cross-variable patterns to improve forecasts.
 
 ```swift
 import MLXTimeSeries
 import MLX
 
-// Multivariate: 1 batch, 2 variates, 512 time steps
+// Univariate -- one variable, e.g. hourly temperature readings
+let input = TimeSeriesInput.univariate([72.1, 73.4, 71.8, 70.2, 69.5, ...])
+
+// Multivariate -- two variables measured together, e.g. temperature + humidity
+// Shape: [1 batch, 2 variates, 512 time steps]
 let series = MLXArray(/* shape: [1, 2, 512] */)
 let input = TimeSeriesInput(
     series: series,
     paddingMask: MLXArray.ones([1, 2, 512]),
     idMask: MLXArray.zeros([1, 2])
 )
-
-// Univariate shorthand
-let input = TimeSeriesInput.univariate([1.0, 2.0, 3.0, 4.5, 5.1])
 ```
 
 ### Output - `TimeSeriesPrediction`
 
 ```swift
-prediction.mean          // [B, V, predictionLength]     -point forecast
-prediction.quantiles     // [B, V, predictionLength, Q]  -quantile forecasts (when available)
-prediction.mixtureParams // MixtureParams                -full distribution (Toto)
+prediction.mean          // [B, V, predictionLength]     - point forecast
+prediction.quantiles     // [B, V, predictionLength, Q]  - quantile forecasts (when available)
+prediction.mixtureParams // MixtureParams                - full distribution (Toto)
 ```
 
 ## ModelArena
@@ -144,11 +144,11 @@ MLX-Swift-TS/
 │       │                                  FlowState, Kairos, TiRex
 │       ├── Model/                       # Toto + shared transformer components
 │       ├── Layers/                      # Distribution heads
-│       ├── Distribution/                # Mixture of Student-T
+│       ├── Distribution/                # Student-t mixture
 │       ├── Preprocessing/               # TimeSeriesInput, CausalPatchScaler
 │       └── Inference/                   # TimeSeriesForecaster, KV cache
 ├── Scripts/
-│   ├── convert_ts_model.py              # PyTorch → MLX conversion (all 8 models)
+│   ├── convert_ts_model.py              # PyTorch -> MLX conversion (all 8 models)
 │   └── requirements.txt
 ├── Applications/
 │   ├── ModelArena/                      # macOS + iOS model comparison app

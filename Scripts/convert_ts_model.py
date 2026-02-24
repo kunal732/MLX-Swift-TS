@@ -6,15 +6,16 @@ Supports: Toto, Chronos (v1 & v2), TimesFM (v2.0 & v2.5), Lag-Llama,
           FlowState, Kairos, TiRex.
 
 Usage:
-    python convert_ts_model.py --model Datadog/Toto-Open-Base-1.0 --output ./converted/toto
-    python convert_ts_model.py --model amazon/chronos-t5-base --output ./converted/chronos
-    python convert_ts_model.py --model autogluon/chronos-2-synth --output ./converted/chronos2
-    python convert_ts_model.py --model google/timesfm-2.5-200m-pytorch --output ./converted/timesfm
-    python convert_ts_model.py --model time-series-foundation-models/Lag-Llama --output ./converted/lag-llama
-    python convert_ts_model.py --model ibm-granite/granite-timeseries-flowstate-r1 --output ./converted/flowstate
-    python convert_ts_model.py --model mldi-lab/Kairos_50m --output ./converted/kairos
-    python convert_ts_model.py --model NX-AI/TiRex --output ./converted/tirex
-    python convert_ts_model.py --model Datadog/Toto-Open-Base-1.0 --output ./converted/toto-4bit --quantize --bits 4
+    python convert_ts_model.py --hf-path Datadog/Toto-Open-Base-1.0 --mlx-path ./converted/toto
+    python convert_ts_model.py --hf-path amazon/chronos-t5-base --mlx-path ./converted/chronos
+    python convert_ts_model.py --hf-path autogluon/chronos-2-synth --mlx-path ./converted/chronos2
+    python convert_ts_model.py --hf-path google/timesfm-2.5-200m-pytorch --mlx-path ./converted/timesfm
+    python convert_ts_model.py --hf-path time-series-foundation-models/Lag-Llama --mlx-path ./converted/lag-llama
+    python convert_ts_model.py --hf-path ibm-granite/granite-timeseries-flowstate-r1 --mlx-path ./converted/flowstate
+    python convert_ts_model.py --hf-path mldi-lab/Kairos_50m --mlx-path ./converted/kairos
+    python convert_ts_model.py --hf-path NX-AI/TiRex --mlx-path ./converted/tirex
+    python convert_ts_model.py --hf-path Datadog/Toto-Open-Base-1.0 --mlx-path ./converted/toto-4bit -q --q-bits 4
+    python convert_ts_model.py --hf-path Datadog/Toto-Open-Base-1.0 -q --upload-repo mlx-community/Toto-Open-Base-1.0-4bit
 """
 
 import argparse
@@ -693,20 +694,72 @@ CONVERTERS = {
 }
 
 
+def generate_readme(
+    hf_path: str,
+    upload_repo: str,
+    model_type: str,
+    quantized: bool = False,
+    q_bits: int | None = None,
+) -> str:
+    """Generate a HuggingFace model card README."""
+    tags = ["mlx", "time-series", "forecasting", model_type]
+    if quantized and q_bits is not None:
+        tags.extend(["quantized", f"{q_bits}-bit"])
+
+    tags_yaml = "\n".join(f"- {tag}" for tag in tags)
+
+    return f"""---
+library_name: mlx
+tags:
+{tags_yaml}
+base_model: {hf_path}
+---
+
+# {upload_repo}
+
+This model was converted from [`{hf_path}`](https://huggingface.co/{hf_path})
+using [MLX-Swift-TS](https://github.com/kunal732/MLX-Swift-TS).
+
+## Use with MLX-Swift-TS
+
+```swift
+import MLXTimeSeries
+
+let forecaster = try await TimeSeriesForecaster.loadFromHub(id: "{upload_repo}")
+let input = TimeSeriesInput.univariate(historicalValues)
+let prediction = forecaster.forecast(input: input, predictionLength: 64)
+```
+
+## Original Model
+
+[{hf_path}](https://huggingface.co/{hf_path})
+"""
+
+
+def upload_to_hub(mlx_path: str, upload_repo: str):
+    """Upload a converted model directory to HuggingFace Hub."""
+    from huggingface_hub import HfApi
+
+    api = HfApi()
+    api.create_repo(repo_id=upload_repo, exist_ok=True)
+    api.upload_folder(folder_path=mlx_path, repo_id=upload_repo)
+    print(f"  Uploaded to https://huggingface.co/{upload_repo}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Convert time series models to MLX safetensors format."
     )
     parser.add_argument(
-        "--model",
+        "--hf-path",
         required=True,
         help="HuggingFace model ID (e.g. Datadog/Toto-Open-Base-1.0) "
         "or local directory path.",
     )
     parser.add_argument(
-        "--output",
-        required=True,
-        help="Output directory for converted model.",
+        "--mlx-path",
+        default="mlx_model",
+        help="Output directory for converted model (default: mlx_model).",
     )
     parser.add_argument(
         "--model-type",
@@ -715,19 +768,20 @@ def main():
         help="Model type (auto-detected from model ID if not specified).",
     )
     parser.add_argument(
+        "-q",
         "--quantize",
         action="store_true",
         help="Quantize weights after conversion.",
     )
     parser.add_argument(
-        "--bits",
+        "--q-bits",
         type=int,
         default=4,
         choices=[2, 4, 8],
         help="Quantization bits (default: 4).",
     )
     parser.add_argument(
-        "--group-size",
+        "--q-group-size",
         type=int,
         default=64,
         help="Quantization group size (default: 64).",
@@ -738,19 +792,25 @@ def main():
         choices=["float16", "bfloat16", "float32"],
         help="Target dtype for non-quantized weights (default: float16).",
     )
+    parser.add_argument(
+        "--upload-repo",
+        default=None,
+        help="HuggingFace repo ID to upload the converted model "
+        "(e.g. mlx-community/Toto-Open-Base-1.0-4bit).",
+    )
     args = parser.parse_args()
 
-    model_type = args.model_type or detect_model_type(args.model)
+    model_type = args.model_type or detect_model_type(args.hf_path)
     print(f"Model type: {model_type}")
 
-    model_path = Path(args.model)
+    model_path = Path(args.hf_path)
     if not model_path.exists():
-        print(f"Downloading {args.model} from HuggingFace...")
+        print(f"Downloading {args.hf_path} from HuggingFace...")
         from huggingface_hub import snapshot_download
 
         model_path = Path(
             snapshot_download(
-                args.model,
+                args.hf_path,
                 allow_patterns=["*.safetensors", "*.ckpt", "*.bin", "config.json"],
             )
         )
@@ -772,12 +832,27 @@ def main():
     q_config = None
     if args.quantize:
         weights, q_config = quantize_weights(
-            weights, bits=args.bits, group_size=args.group_size
+            weights, bits=args.q_bits, group_size=args.q_group_size
         )
 
-    output_dir = Path(args.output)
+    output_dir = Path(args.mlx_path)
     save_model(weights, config, output_dir, q_config)
     print(f"\nDone! Converted model saved to {output_dir}")
+
+    if args.upload_repo:
+        readme = generate_readme(
+            hf_path=args.hf_path,
+            upload_repo=args.upload_repo,
+            model_type=model_type,
+            quantized=args.quantize,
+            q_bits=args.q_bits if args.quantize else None,
+        )
+        readme_path = output_dir / "README.md"
+        with open(readme_path, "w") as f:
+            f.write(readme)
+        print(f"  Generated {readme_path}")
+
+        upload_to_hub(str(output_dir), args.upload_repo)
 
 
 if __name__ == "__main__":

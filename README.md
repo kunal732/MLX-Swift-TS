@@ -1,6 +1,6 @@
 # MLX-Swift-TS
 
-Time series foundation models on Apple Silicon.
+Run Time series foundation models on Apple Silicon.
 
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20iOS%2017%2B-lightgrey)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)

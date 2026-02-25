@@ -62,7 +62,71 @@ struct ArenaView: View {
             vm.startCollecting()
         }
         .onDisappear { vm.stopCollecting() }
+        #if os(iOS)
+        .overlay {
+            if runner.isLoading {
+                downloadOverlay
+            }
+        }
+        #endif
     }
+
+    #if os(iOS)
+    // MARK: - Download Overlay
+
+    private var downloadOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.white)
+
+                VStack(spacing: 6) {
+                    Text("Downloading Models")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+
+                    Text(runner.loadingStatus)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
+
+                VStack(spacing: 8) {
+                    if runner.loadProgress > 0 {
+                        ProgressView(value: runner.loadProgress)
+                            .tint(.white)
+                            .frame(width: 240)
+
+                        Text(String(format: "%.0f%%", runner.loadProgress * 100))
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .monospacedDigit()
+                    } else {
+                        ProgressView()
+                            .tint(.white)
+                    }
+
+                    if runner.totalModelsToLoad > 1 {
+                        Text("Model \(runner.currentModelIndex) of \(runner.totalModelsToLoad)")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+            }
+            .padding(32)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(.ultraThinMaterial)
+            )
+            .padding(.horizontal, 40)
+        }
+    }
+    #endif
 
     // MARK: - Top Bar
 

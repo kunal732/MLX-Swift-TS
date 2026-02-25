@@ -7,7 +7,7 @@ Run Time series foundation models on Apple Silicon.
 
 ## Overview
 
-MLX-Swift-TS is a Swift SDK for running time series foundation models locally on Mac and iOS using [MLX](https://github.com/ml-explore/mlx-swift). Convert time series models from HuggingFace or local checkpoints to MLX format, then run inference - no server required.
+MLX-Swift-TS is a Swift SDK for running time series foundation models locally on Mac and iOS using [MLX](https://github.com/ml-explore/mlx-swift). Convert time series models hosted on HuggingFace Hub or stored locally to MLX format, then run inference - no server required.
 
 Eight model architectures are supported out of the box, from Datadog's Toto to Google's TimesFM, Amazon's Chronos, and more.
 

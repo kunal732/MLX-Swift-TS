@@ -7,7 +7,9 @@ DerivedData/
 converted/
 
 # Swift Package Manager
-.swiftpm/
+.swiftpm/xcode/xcuserdata/
+.swiftpm/xcode/package.xcworkspace/
+.swiftpm/configuration/
 Package.resolved
 
 # Xcode

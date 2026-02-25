@@ -12,7 +12,6 @@ let package = Package(
         .library(
             name: "MLXTimeSeries",
             targets: ["MLXTimeSeries"]),
-        .executable(name: "ModelArena", targets: ["ModelArena"]),
     ],
     dependencies: [
         .package(
@@ -36,12 +35,6 @@ let package = Package(
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
-        ),
-        .executableTarget(
-            name: "ModelArena",
-            dependencies: ["MLXTimeSeries"],
-            path: "Applications/ModelArena",
-            exclude: ["ModelArena.xcodeproj"]
         ),
         .testTarget(
             name: "MLXTimeSeriesTests",

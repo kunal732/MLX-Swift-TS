@@ -43,10 +43,12 @@ print(prediction.mean)       // point forecast [1, 64]
 print(prediction.quantiles)  // quantile forecasts (when available)
 ```
 
-## Supported Models
+## Supported Architectures
 
-| Model | Origin | Architecture | Output | Context | HuggingFace ID |
-|-------|--------|-------------|--------|---------|----------------|
+Any model fine-tuned on one of these architectures can be converted and run — not just the reference checkpoints listed below.
+
+| Architecture | Origin | Design | Output | Max Context | Reference Checkpoint |
+|-------------|--------|--------|--------|-------------|----------------------|
 | **[Toto](https://huggingface.co/Datadog/Toto-Open-Base-1.0)** | Datadog | Patch transformer + space-wise attention | Student-t mixture | 4 096 | `Datadog/Toto-Open-Base-1.0` |
 | **[TimesFM 2.5](https://huggingface.co/google/timesfm-2.5-200m-pytorch)** | Google | Decoder-only transformer | 9 quantiles | 16 384 | `google/timesfm-2.5-200m-pytorch` |
 | **[Chronos](https://huggingface.co/amazon/chronos-t5-base)** | Amazon | T5 encoder-decoder, tokenized | Sampled quantiles | 512 | `amazon/chronos-t5-base` |

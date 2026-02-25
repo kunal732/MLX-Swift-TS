@@ -157,7 +157,7 @@ MLX-Swift-TS/
 │       ├── Preprocessing/               # TimeSeriesInput, CausalPatchScaler
 │       └── Inference/                   # TimeSeriesForecaster, KV cache
 ├── Scripts/
-│   ├── convert_ts_model.py              # PyTorch -> MLX conversion
+│   ├── convert_ts_model.py              # Model conversion script
 │   └── requirements.txt
 ├── Applications/
 │   ├── ModelArena/                      # macOS + iOS model comparison app

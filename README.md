@@ -167,7 +167,7 @@ A cross-platform demo app (macOS + iOS) for comparing models side by side. Load 
 open Applications/ModelArena/ModelArena.xcodeproj
 ```
 
-On macOS the app auto-loads models from the `converted/` directory. On iOS, use the document picker or enter a HuggingFace Hub ID.
+Load models by entering a HuggingFace Hub ID directly in the app, or use the file picker to load a locally converted model.
 
 ## Project Structure
 

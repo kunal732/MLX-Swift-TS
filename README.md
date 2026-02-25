@@ -97,9 +97,9 @@ Every forecast returns a `TimeSeriesPrediction` with three fields:
 | `quantiles` | `[B, V, H, Q]` | Uncertainty bands - the range of plausible outcomes (available on TimesFM, Chronos, Chronos-2, FlowState, Kairos, TiRex) |
 | `mixtureParams` | `MixtureParams` | Full Student-t mixture distribution (Toto only) |
 
-**Quantiles** express uncertainty as percentile ranges. A tight range means the model is confident; a wide range means the signal is hard to predict. For example, a 10th–90th percentile band gives you a plausible low and high around the forecast line.
+**Quantiles** express uncertainty as percentile ranges. A tight range means the model is confident; a wide range means the signal is hard to predict. For example, a 10th-90th percentile band gives you a plausible low and high around the forecast line.
 
-**Toto's mixture distribution** is more expressive than quantiles — instead of a few slices of the distribution you get the full probability density. Access it like this:
+**Toto's mixture distribution** is more expressive than quantiles. Instead of a few slices of the distribution you get the full probability density. Access it like this:
 
 ```swift
 // Toto only - full uncertainty distribution

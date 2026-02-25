@@ -393,35 +393,85 @@ def convert_lag_llama(model_dir: Path) -> tuple[dict[str, mx.array], dict]:
     else:
         model_kwargs = {}
 
+    import re as _re
+
+    # Lag-Llama uses a GPT-style naming convention:
+    #   model.transformer.wte.*          → input_proj.*
+    #   model.transformer.ln_f.scale     → final_norm.weight
+    #   model.transformer.h.N.rms_1.scale → layers.N.norm1.weight
+    #   model.transformer.h.N.rms_2.scale → layers.N.norm2.weight
+    #   model.transformer.h.N.attn.q_proj.* → layers.N.attention.q_proj.*
+    #   model.transformer.h.N.attn.kv_proj.weight (fused KV, split 50/50) →
+    #       layers.N.attention.k_proj.weight + layers.N.attention.v_proj.weight
+    #   model.transformer.h.N.attn.c_proj.* → layers.N.attention.o_proj.*
+    #   model.transformer.h.N.mlp.c_fc1.* + c_fc2.* (fused) → layers.N.mlp.gate_up.*
+    #   model.transformer.h.N.mlp.c_proj.* → layers.N.mlp.down.*
+    #   model.param_proj.proj.0.* → distribution_head.df_proj.*
+    #   model.param_proj.proj.1.* → distribution_head.loc_proj.*
+    #   model.param_proj.proj.2.* → distribution_head.scale_proj.*
+    _head_map = {0: "df_proj", 1: "loc_proj", 2: "scale_proj"}
+    _c_fc1: dict = {}
+    _c_fc2: dict = {}
     remapped = {}
+
     for key, value in raw_weights.items():
-        new_key = key
-        if new_key.startswith("model."):
-            new_key = new_key[len("model."):]
-        new_key = new_key.replace("backbone.", "")
-        new_key = new_key.replace("self_attn.", "attention.")
-        new_key = new_key.replace("mlp.fc1.", "mlp.gate_up.")
-        new_key = new_key.replace("mlp.fc2.", "mlp.down.")
-        new_key = new_key.replace("input_layernorm.", "norm1.")
-        new_key = new_key.replace("post_attention_layernorm.", "norm2.")
-        new_key = new_key.replace("param_proj.proj.", "distribution_head.proj.")
-        if "rotary_emb" in new_key:
-            continue
-        remapped[new_key] = value
+        k = key[len("model."):] if key.startswith("model.") else key
+
+        if k.startswith("transformer.wte."):
+            remapped[k.replace("transformer.wte.", "input_proj.")] = value
+        elif k == "transformer.ln_f.scale":
+            remapped["final_norm.weight"] = value
+        elif m := _re.match(r"transformer\.h\.(\d+)\.(.*)", k):
+            n, rest = m.group(1), m.group(2)
+            if rest == "rms_1.scale":
+                remapped[f"layers.{n}.norm1.weight"] = value
+            elif rest == "rms_2.scale":
+                remapped[f"layers.{n}.norm2.weight"] = value
+            elif rest.startswith("attn.q_proj."):
+                remapped[f"layers.{n}.attention.q_proj.{rest[len('attn.q_proj.'):]}"] = value
+            elif rest == "attn.kv_proj.weight":
+                half = value.shape[0] // 2
+                remapped[f"layers.{n}.attention.k_proj.weight"] = value[:half]
+                remapped[f"layers.{n}.attention.v_proj.weight"] = value[half:]
+            elif rest.startswith("attn.c_proj."):
+                remapped[f"layers.{n}.attention.o_proj.{rest[len('attn.c_proj.'):]}"] = value
+            elif rest.startswith("mlp.c_fc1."):
+                _c_fc1[(n, rest[len("mlp.c_fc1."):])] = value
+            elif rest.startswith("mlp.c_fc2."):
+                _c_fc2[(n, rest[len("mlp.c_fc2."):])] = value
+            elif rest.startswith("mlp.c_proj."):
+                remapped[f"layers.{n}.mlp.down.{rest[len('mlp.c_proj.'):]}"] = value
+        elif m := _re.match(r"param_proj\.proj\.(\d+)\.(.*)", k):
+            idx, suffix = int(m.group(1)), m.group(2)
+            if idx in _head_map:
+                remapped[f"distribution_head.{_head_map[idx]}.{suffix}"] = value
+
+    # Fuse c_fc1 + c_fc2 → gate_up (SwiGLU gate and up projections)
+    for (n, suffix), fc1 in _c_fc1.items():
+        if (n, suffix) in _c_fc2:
+            remapped[f"layers.{n}.mlp.gate_up.{suffix}"] = mx.concatenate(
+                [fc1, _c_fc2[(n, suffix)]], axis=0
+            )
+
+    # Infer config from actual weight shapes
+    hidden_size = int(model_kwargs.get("n_embd_per_head", 16)) * int(model_kwargs.get("n_head", 9))
+    num_layers = int(model_kwargs.get("n_layer", 8))
+    num_heads = int(model_kwargs.get("n_head", 9))
+    intermediate_size = _c_fc1[list(_c_fc1.keys())[0]].shape[0] if _c_fc1 else hidden_size * 4
 
     config = {
         "model_type": "lag_llama",
         "ts_model_class": "LagLlamaModel",
-        "hidden_size": model_kwargs.get("d_model", 256),
-        "num_layers": model_kwargs.get("num_layers", 2),
-        "num_heads": model_kwargs.get("num_attention_heads", 2),
+        "hidden_size": hidden_size,
+        "num_layers": num_layers,
+        "num_heads": num_heads,
         "input_format": "lag_features",
         "output_format": "student_t",
         "context_length": model_kwargs.get("context_length", 32),
         "prediction_length": model_kwargs.get("prediction_length", 24),
-        "d_model": model_kwargs.get("d_model", 256),
-        "intermediate_size": model_kwargs.get("d_model", 256) * 4,
-        "num_attention_heads": model_kwargs.get("num_attention_heads", 2),
+        "d_model": hidden_size,
+        "intermediate_size": intermediate_size,
+        "num_attention_heads": num_heads,
         "rope_theta": model_kwargs.get("rope_theta", 10000.0),
         "lags_sequence": model_kwargs.get(
             "lags_seq",

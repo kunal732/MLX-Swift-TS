@@ -33,7 +33,7 @@ Time series forecasting predicts future values from a sequence of past measureme
 ```swift
 import MLXTimeSeries
 
-// Download directly from HuggingFace Hub (no conversion needed)
+// Load a pre-converted MLX time series model from HuggingFace Hub
 let forecaster = try await TimeSeriesForecaster.loadFromHub(
     id: "kunal732/Toto-Open-Base-1.0-MLX"
 )

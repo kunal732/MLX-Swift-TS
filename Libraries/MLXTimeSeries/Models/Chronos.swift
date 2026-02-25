@@ -618,14 +618,11 @@ public class ChronosModel: Module, TimeSeriesModel {
     }
 
     public func sanitize(weights: [String: MLXArray]) -> [String: MLXArray] {
-        // Chronos uses standard T5 naming — minimal remapping needed
-        var result = [String: MLXArray]()
-        for (key, value) in weights {
-            // Skip tied embedding weights
-            if key == "lm_head.weight" && weights["shared.weight"] != nil {
-                continue
-            }
-            result[key] = value
+        var result = weights
+        // lm_head.weight is tied to shared.weight in T5. The convert script omits
+        // it to save space, so restore the tie here before loading.
+        if result["lm_head.weight"] == nil, let sharedWeight = result["shared.weight"] {
+            result["lm_head.weight"] = sharedWeight
         }
         return result
     }

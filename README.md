@@ -48,10 +48,14 @@ Use this when you have a single stream of measurements (e.g. CPU usage, temperat
 let cpuUsage: [Float] = [20, 22, 19, 23, 21, 25, 24, 26, 27, 25]
 
 let input = TimeSeriesInput.univariate(cpuUsage)
+
 let forecast = forecaster.forecast(input: input, predictionLength: 8)
 
-print(forecast.mean)       // [1, 1, 8]  - predicted values for next 8 steps
-print(forecast.quantiles)  // [1, 1, 8, Q] - uncertainty ranges (when available)
+// [1, 1, 8]  - predicted values for next 8 steps
+print(forecast.mean)
+
+// [1, 1, 8, Q] - uncertainty ranges (when available)
+print(forecast.quantiles)
 ```
 
 ### 3. Multivariate: multiple variables over time
@@ -61,14 +65,16 @@ Use this when you have related signals measured together (e.g. heart rate + temp
 ```swift
 // Two variables, each with 6 historical readings
 let series: [[Float]] = [
-    [70, 72, 74, 73, 75, 76],          // Heart rate (bpm)
+    [70, 72, 74, 73, 75, 76],              // Heart rate (bpm)
     [36.5, 36.6, 36.7, 36.6, 36.8, 36.9]  // Temperature (°C)
 ]
 
 let input = TimeSeriesInput.multivariate(series)
+
 let forecast = forecaster.forecast(input: input, predictionLength: 10)
 
-print(forecast.mean)  // [1, 2, 10] - 10 predicted steps for each of the 2 variables
+// [1, 2, 10] - 10 predicted steps for each of the 2 variables
+print(forecast.mean)
 ```
 
 ### Mental model

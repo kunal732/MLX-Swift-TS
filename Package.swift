@@ -41,7 +41,7 @@ let package = Package(
             name: "ModelArena",
             dependencies: ["MLXTimeSeries"],
             path: "Applications/ModelArena",
-            exclude: ["ModelArena.xcodeproj", "build"]
+            exclude: ["ModelArena.xcodeproj"]
         ),
         .testTarget(
             name: "MLXTimeSeriesTests",

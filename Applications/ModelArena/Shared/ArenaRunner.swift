@@ -26,7 +26,8 @@ struct HubModel: Identifiable, Hashable {
 
 /// Default models available in the arena.
 let defaultHubModels: [HubModel] = [
-    HubModel(name: "Toto Base", hubID: "Datadog/Toto-Open-Base-1.0"),
+    HubModel(name: "Toto Base", hubID: "kunal732/Toto-Open-Base-1.0-MLX"),
+    HubModel(name: "TimesFM 2.5", hubID: "kunal732/timesfm-2.5-200m-transformers-mlx"),
 ]
 
 /// A single model slot in the arena.

@@ -31,23 +31,6 @@ struct ModelArenaApp: App {
                 }
             }
             #endif
-            .task {
-                #if os(macOS)
-                // Auto-load from converted/ directory if it exists
-                let dir = URL(filePath: "/Users/kunal.batra/Documents/code/datadog/mlxtoto/converted")
-                if FileManager.default.fileExists(atPath: dir.path) {
-                    runner.loadFromDirectory(dir)
-                }
-                #else
-                // On iOS, auto-load from Documents/converted if present
-                let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                let convertedDir = docs.appending(component: "converted")
-                if FileManager.default.fileExists(atPath: convertedDir.path) {
-                    runner.loadFromDirectory(convertedDir)
-                }
-                // Otherwise wait for user to load via Files or HF button
-                #endif
-            }
         }
         #if os(macOS)
         .defaultSize(width: 1200, height: 800)

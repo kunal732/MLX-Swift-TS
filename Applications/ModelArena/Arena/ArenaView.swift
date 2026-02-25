@@ -430,7 +430,7 @@ struct ArenaView: View {
     // MARK: - Demo Note
 
     private var demoNote: some View {
-        Text("All models in this demo use a 900-step context window (~30 min at 2s intervals). Larger contexts can increase forecast fidelity. This app is a demo to show how to integrate MLX-Swift-TS.")
+        Text("Models are fed up to 30 minutes of live system metrics. In production, these models support significantly longer input histories for richer forecasting.")
             .font(.caption)
             .foregroundStyle(.tertiary)
             .multilineTextAlignment(.center)

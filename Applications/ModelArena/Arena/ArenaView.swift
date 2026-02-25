@@ -44,90 +44,25 @@ struct ArenaView: View {
     #endif
 
     var body: some View {
-        ZStack {
-            TimelineView(.periodic(from: .now, by: 2)) { _ in
-                ScrollView {
-                    VStack(spacing: 16) {
-                        topBar
-                        arenaChart
-                        modelCards
-                        if !runner.slots.isEmpty {
-                            leaderboard
-                        }
+        TimelineView(.periodic(from: .now, by: 2)) { _ in
+            ScrollView {
+                VStack(spacing: 16) {
+                    topBar
+                    arenaChart
+                    modelCards
+                    if !runner.slots.isEmpty {
+                        leaderboard
                     }
-                    .padding()
                 }
+                .padding()
             }
-            .onAppear {
-                vm.autoRunner = runner
-                vm.startCollecting()
-            }
-            .onDisappear { vm.stopCollecting() }
-
-            #if os(iOS)
-            if runner.isLoading {
-                downloadOverlay
-            }
-            #endif
         }
-    }
-
-    #if os(iOS)
-    // MARK: - Download Overlay
-
-    private var downloadOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.45)
-                .ignoresSafeArea()
-
-            VStack(spacing: 20) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(.white)
-
-                VStack(spacing: 6) {
-                    Text("Downloading Models")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-
-                    Text(runner.loadingStatus)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                }
-
-                VStack(spacing: 8) {
-                    if runner.loadProgress > 0 {
-                        ProgressView(value: runner.loadProgress)
-                            .tint(.white)
-                            .frame(width: 240)
-
-                        Text(String(format: "%.0f%%", runner.loadProgress * 100))
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.7))
-                            .monospacedDigit()
-                    } else {
-                        ProgressView()
-                            .tint(.white)
-                    }
-
-                    if runner.totalModelsToLoad > 1 {
-                        Text("Model \(runner.currentModelIndex) of \(runner.totalModelsToLoad)")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                }
-            }
-            .padding(32)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(.ultraThinMaterial)
-            )
-            .padding(.horizontal, 40)
+        .onAppear {
+            vm.autoRunner = runner
+            vm.startCollecting()
         }
+        .onDisappear { vm.stopCollecting() }
     }
-    #endif
 
     // MARK: - Top Bar
 
@@ -272,7 +207,35 @@ struct ArenaView: View {
             Text("Models")
                 .font(.headline)
 
-            if runner.slots.isEmpty {
+            if runner.isLoading {
+                VStack(spacing: 16) {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Downloading Models")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text(runner.loadingStatus)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                        Spacer()
+                        if runner.totalModelsToLoad > 1 {
+                            Text("\(runner.currentModelIndex) / \(runner.totalModelsToLoad)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    if runner.loadProgress > 0 {
+                        ProgressView(value: runner.loadProgress)
+                            .tint(.blue)
+                    }
+                }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 10).fill(.quaternary.opacity(0.4)))
+            } else if runner.slots.isEmpty {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {

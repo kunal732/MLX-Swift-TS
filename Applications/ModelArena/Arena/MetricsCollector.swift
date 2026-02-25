@@ -163,7 +163,7 @@ class MetricsCollector {
             totalOut += UInt64(data.ifi_obytes)
         }
 
-        if prevNetIn > 0 && dt > 0 {
+        if prevNetIn > 0 && dt > 0 && totalIn >= prevNetIn && totalOut >= prevNetOut {
             snap.netInMBps = Float(totalIn - prevNetIn) / 1_048_576 / dt
             snap.netOutMBps = Float(totalOut - prevNetOut) / 1_048_576 / dt
         }

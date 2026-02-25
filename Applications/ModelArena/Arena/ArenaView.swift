@@ -124,27 +124,36 @@ struct ArenaView: View {
 
             Spacer()
 
-            // Run All button
-            Button {
-                vm.predict(runner: runner)
-            } label: {
-                HStack(spacing: 4) {
-                    if vm.isPredicting {
-                        ProgressView()
-                            .controlSize(.small)
+            // Run All button + warmup note
+            VStack(alignment: .trailing, spacing: 4) {
+                Button {
+                    vm.predict(runner: runner)
+                } label: {
+                    HStack(spacing: 4) {
+                        if vm.isPredicting {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text("Run All")
                     }
-                    Text("Run All")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!vm.hasEnoughSamples || runner.slots.isEmpty || vm.isPredicting)
+                #if os(macOS)
+                .help(
+                    !vm.hasEnoughSamples
+                        ? "Need at least 64 samples (~2 min)"
+                        : runner.slots.isEmpty ? "Load models first" : "Run all models"
+                )
+                #endif
+
+                if !vm.hasEnoughSamples {
+                    Text("Collecting samples \(vm.sampleCount)/64 (~2 min warmup)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(!vm.hasEnoughSamples || runner.slots.isEmpty || vm.isPredicting)
-            #if os(macOS)
-            .help(
-                !vm.hasEnoughSamples
-                    ? "Need at least 64 samples (~2 min)"
-                    : runner.slots.isEmpty ? "Load models first" : "Run all models"
-            )
-            #endif
         }
         .padding(.horizontal, 4)
     }

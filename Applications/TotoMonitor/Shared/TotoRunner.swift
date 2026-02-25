@@ -21,7 +21,7 @@ class TotoRunner {
 
         do {
             forecaster = try await TotoForecaster.loadFromHub(
-                id: "Datadog/Toto-Open-Base-1.0"
+                id: "kunal732/Toto-Open-Base-1.0-MLX"
             ) { [weak self] progress in
                 Task { @MainActor [weak self] in
                     self?.loadProgress = progress.fractionCompleted

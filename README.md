@@ -26,21 +26,62 @@ dependencies: [
 
 ## Quick Start
 
+Time series forecasting predicts future values from a sequence of past measurements — think CPU usage, heart rate, stock price, or sensor readings. MLX-Swift-TS runs these models fully on-device using Apple Silicon.
+
+### 1. Load a model
+
 ```swift
 import MLXTimeSeries
 
-// Load a converted model
-let forecaster = try TimeSeriesForecaster.loadFromDirectory(modelURL)
+// Download directly from HuggingFace Hub (no conversion needed)
+let forecaster = try await TimeSeriesForecaster.loadFromHub(
+    id: "kunal732/Toto-Open-Base-1.0-MLX"
+)
+```
 
-// Or download directly from HuggingFace Hub
-let forecaster = try await TimeSeriesForecaster.loadFromHub(id: "mlx-community/Toto-Open-Base-1.0-mlx")
+### 2. Univariate — one variable over time
 
-// Forecast
-let input = TimeSeriesInput.univariate(historicalValues)
-let prediction = forecaster.forecast(input: input, predictionLength: 64)
+Use this when you have a single stream of measurements (e.g. CPU usage, temperature, sales).
 
-print(prediction.mean)       // point forecast [1, 64]
-print(prediction.quantiles)  // quantile forecasts (when available)
+```swift
+// Historical CPU usage (%) — any length works, more history = better forecast
+let cpuUsage: [Float] = [20, 22, 19, 23, 21, 25, 24, 26, 27, 25]
+
+let input = TimeSeriesInput.univariate(cpuUsage)
+let forecast = forecaster.forecast(input: input, predictionLength: 8)
+
+print(forecast.mean)       // [1, 1, 8]  — predicted values for next 8 steps
+print(forecast.quantiles)  // [1, 1, 8, Q] — uncertainty ranges (when available)
+```
+
+### 3. Multivariate — multiple variables over time
+
+Use this when you have related signals measured together (e.g. heart rate + temperature). The model learns relationships between variables to improve all forecasts.
+
+```swift
+// Two variables, each with 6 historical readings
+let series: [[Float]] = [
+    [70, 72, 74, 73, 75, 76],          // Heart rate (bpm)
+    [36.5, 36.6, 36.7, 36.6, 36.8, 36.9]  // Temperature (°C)
+]
+
+let input = TimeSeriesInput.multivariate(series)
+let forecast = forecaster.forecast(input: input, predictionLength: 10)
+
+print(forecast.mean)  // [1, 2, 10] — 10 predicted steps for each of the 2 variables
+```
+
+### Mental model
+
+```
+Univariate                    Multivariate
+─────────────────────────     ─────────────────────────
+Input:  [T]                   Input:  [N, T]
+Output: [H]                   Output: [N, H]
+
+T = historical steps          N = number of variables
+H = prediction length         T = historical steps
+                              H = prediction length
 ```
 
 ## Supported Architectures
@@ -89,40 +130,6 @@ python Scripts/convert_ts_model.py \
   --upload-repo mlx-community/Toto-Open-Base-1.0-4bit
 ```
 
-## Data Format
-
-### Input - `TimeSeriesInput`
-
-All models accept a common input with shape **`[B, V, T]`** (batch, variates, time steps).
-
-**Univariate** means a single variable over time -- for example, hourly CPU usage of one server or daily closing price of one stock. Most time series forecasting starts here.
-
-**Multivariate** means multiple related variables measured over the same time period -- for example, CPU usage *and* memory usage of the same server, or temperature *and* humidity from the same sensor. The model can learn cross-variable patterns to improve forecasts.
-
-```swift
-import MLXTimeSeries
-import MLX
-
-// Univariate -- one variable, e.g. hourly temperature readings
-let input = TimeSeriesInput.univariate([72.1, 73.4, 71.8, 70.2, 69.5, ...])
-
-// Multivariate -- two variables measured together, e.g. temperature + humidity
-// Shape: [1 batch, 2 variates, 512 time steps]
-let series = MLXArray(/* shape: [1, 2, 512] */)
-let input = TimeSeriesInput(
-    series: series,
-    paddingMask: MLXArray.ones([1, 2, 512]),
-    idMask: MLXArray.zeros([1, 2])
-)
-```
-
-### Output - `TimeSeriesPrediction`
-
-```swift
-prediction.mean          // [B, V, predictionLength]     - point forecast
-prediction.quantiles     // [B, V, predictionLength, Q]  - quantile forecasts (when available)
-prediction.mixtureParams // MixtureParams                - full distribution (Toto)
-```
 
 ## ModelArena
 

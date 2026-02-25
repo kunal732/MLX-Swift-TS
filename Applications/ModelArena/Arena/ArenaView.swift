@@ -44,31 +44,32 @@ struct ArenaView: View {
     #endif
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 2)) { _ in
-            ScrollView {
-                VStack(spacing: 16) {
-                    topBar
-                    arenaChart
-                    modelCards
-                    if !runner.slots.isEmpty {
-                        leaderboard
+        ZStack {
+            TimelineView(.periodic(from: .now, by: 2)) { _ in
+                ScrollView {
+                    VStack(spacing: 16) {
+                        topBar
+                        arenaChart
+                        modelCards
+                        if !runner.slots.isEmpty {
+                            leaderboard
+                        }
                     }
+                    .padding()
                 }
-                .padding()
             }
-        }
-        .onAppear {
-            vm.autoRunner = runner
-            vm.startCollecting()
-        }
-        .onDisappear { vm.stopCollecting() }
-        #if os(iOS)
-        .overlay {
+            .onAppear {
+                vm.autoRunner = runner
+                vm.startCollecting()
+            }
+            .onDisappear { vm.stopCollecting() }
+
+            #if os(iOS)
             if runner.isLoading {
                 downloadOverlay
             }
+            #endif
         }
-        #endif
     }
 
     #if os(iOS)

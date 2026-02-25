@@ -299,8 +299,15 @@ public class TimesFMModel: Module, TimeSeriesModel {
     public func sanitize(weights: [String: MLXArray]) -> [String: MLXArray] {
         var result = [String: MLXArray]()
         for (key, value) in weights {
-            // RMSNorm uses .weight in MLXNN but TimesFM saves as .scale
-            let newKey = key.replacingOccurrences(of: ".scale", with: ".weight")
+            // RMSNorm layers save their parameter as "_ln.scale" but MLXNN expects
+            // "_ln.weight". Only rename that suffix — do NOT rename per_dim_scale
+            // keys which are learned attention scaling parameters, not norms.
+            let newKey: String
+            if key.hasSuffix("_ln.scale") {
+                newKey = String(key.dropLast("scale".count)) + "weight"
+            } else {
+                newKey = key
+            }
             result[newKey] = value
         }
         return result

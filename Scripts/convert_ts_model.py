@@ -351,9 +351,38 @@ def convert_lag_llama(model_dir: Path) -> tuple[dict[str, mx.array], dict]:
             ckpt_path = None
 
     if ckpt_path is not None:
+        import pickle
         import torch
 
-        checkpoint = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
+        # Lag-Llama checkpoints were saved with an old gluonts version whose
+        # modules no longer exist. Use a custom unpickler that stubs missing
+        # classes so we can still extract the state_dict and hyper_parameters.
+        class _StubClass:
+            def __init__(self, *a, **kw): pass
+            def __setstate__(self, s): pass
+            def __call__(self, *a, **kw): return _StubClass()
+
+        class _SafeUnpickler(pickle.Unpickler):
+            def find_class(self, module, name):
+                try:
+                    return super().find_class(module, name)
+                except Exception:
+                    return _StubClass
+
+        class _SafePickleModule:
+            Unpickler = _SafeUnpickler
+            @staticmethod
+            def load(f, **kw): return _SafeUnpickler(f).load()
+            loads = pickle.loads
+            dump = pickle.dump
+            dumps = pickle.dumps
+            HIGHEST_PROTOCOL = pickle.HIGHEST_PROTOCOL
+            DEFAULT_PROTOCOL = pickle.DEFAULT_PROTOCOL
+
+        checkpoint = torch.load(
+            str(ckpt_path), map_location="cpu", weights_only=False,
+            pickle_module=_SafePickleModule,
+        )
         hyper_params = checkpoint.get("hyper_parameters", {})
         model_kwargs = hyper_params.get("model_kwargs", {})
         state_dict = checkpoint.get("state_dict", {})

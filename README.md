@@ -104,10 +104,11 @@ Every forecast returns a `TimeSeriesPrediction` with three fields:
 ```swift
 // Toto only - full uncertainty distribution
 if let params = forecast.mixtureParams {
-    print("Mixture weights:", params.weights)
-    print("Means:", params.means)
-    print("Scales:", params.scales)
-    print("Degrees of freedom:", params.degreesOfFreedom)
+    print("Weights:", params.weights)          // mixture component weights
+    print("Loc:", params.loc)                  // mean of each component
+    print("Scale:", params.scale)              // spread of each component
+    print("DF:", params.df)                    // degrees of freedom (> 2)
+    print("Forecast mean:", params.mean())     // weighted mean across components
 }
 ```
 

@@ -26,7 +26,7 @@ dependencies: [
 
 ## Quick Start
 
-Time series forecasting predicts future values from a sequence of past measurements — think CPU usage, heart rate, stock price, or sensor readings. MLX-Swift-TS runs these models fully on-device using Apple Silicon.
+Time series forecasting predicts future values from a sequence of past measurements (CPU usage, heart rate, stock price, sensor readings). MLX-Swift-TS runs these models fully on-device using Apple Silicon.
 
 ### 1. Load a model
 
@@ -39,22 +39,22 @@ let forecaster = try await TimeSeriesForecaster.loadFromHub(
 )
 ```
 
-### 2. Univariate — one variable over time
+### 2. Univariate: one variable over time
 
 Use this when you have a single stream of measurements (e.g. CPU usage, temperature, sales).
 
 ```swift
-// Historical CPU usage (%) — any length works, more history = better forecast
+// Historical CPU usage (%) - any length works, more history = better forecast
 let cpuUsage: [Float] = [20, 22, 19, 23, 21, 25, 24, 26, 27, 25]
 
 let input = TimeSeriesInput.univariate(cpuUsage)
 let forecast = forecaster.forecast(input: input, predictionLength: 8)
 
-print(forecast.mean)       // [1, 1, 8]  — predicted values for next 8 steps
-print(forecast.quantiles)  // [1, 1, 8, Q] — uncertainty ranges (when available)
+print(forecast.mean)       // [1, 1, 8]  - predicted values for next 8 steps
+print(forecast.quantiles)  // [1, 1, 8, Q] - uncertainty ranges (when available)
 ```
 
-### 3. Multivariate — multiple variables over time
+### 3. Multivariate: multiple variables over time
 
 Use this when you have related signals measured together (e.g. heart rate + temperature). The model learns relationships between variables to improve all forecasts.
 
@@ -68,7 +68,7 @@ let series: [[Float]] = [
 let input = TimeSeriesInput.multivariate(series)
 let forecast = forecaster.forecast(input: input, predictionLength: 10)
 
-print(forecast.mean)  // [1, 2, 10] — 10 predicted steps for each of the 2 variables
+print(forecast.mean)  // [1, 2, 10] - 10 predicted steps for each of the 2 variables
 ```
 
 ### Mental model

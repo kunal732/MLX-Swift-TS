@@ -53,7 +53,7 @@ let input = TimeSeriesInput.univariate(cpuUsage)
 let forecast = forecaster.forecast(input: input, predictionLength: 8)
 
 print(forecast.mean)       // [1, 1, 8]    - predicted values for next 8 steps
-print(forecast.quantiles)  // [1, 1, 8, Q] - uncertainty ranges (when available)
+print(forecast.quantiles)  // [1, 1, 8, Q] - uncertainty ranges (when available, see Reading the Output)
 ```
 
 ### 3. Multivariate: multiple variables over time
@@ -85,6 +85,30 @@ Output: [H]                   Output: [N, H]
 T = historical steps          N = number of variables
 H = prediction length         T = historical steps
                               H = prediction length
+```
+
+## Reading the Output
+
+Every forecast returns a `TimeSeriesPrediction` with three fields:
+
+| Field | Shape | Description |
+|-------|-------|-------------|
+| `mean` | `[B, V, H]` | Point forecast - your best single predicted value per step |
+| `quantiles` | `[B, V, H, Q]` | Uncertainty bands - the range of plausible outcomes (available on TimesFM, Chronos, Chronos-2, FlowState, Kairos, TiRex) |
+| `mixtureParams` | `MixtureParams` | Full Student-t mixture distribution (Toto only) |
+
+**Quantiles** express uncertainty as percentile ranges. A tight range means the model is confident; a wide range means the signal is hard to predict. For example, a 10th–90th percentile band gives you a plausible low and high around the forecast line.
+
+**Toto's mixture distribution** is more expressive than quantiles — instead of a few slices of the distribution you get the full probability density. Access it like this:
+
+```swift
+// Toto only - full uncertainty distribution
+if let params = forecast.mixtureParams {
+    print("Mixture weights:", params.weights)
+    print("Means:", params.means)
+    print("Scales:", params.scales)
+    print("Degrees of freedom:", params.degreesOfFreedom)
+}
 ```
 
 ## Supported Architectures

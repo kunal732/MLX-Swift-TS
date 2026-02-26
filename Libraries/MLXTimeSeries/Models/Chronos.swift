@@ -652,12 +652,12 @@ public class ChronosModel: Module, TimeSeriesModel {
 class ChronosEncoder: Module {
     @ModuleInfo(key: "block") var blocks: [T5EncoderBlock]
     @ModuleInfo(key: "final_layer_norm") var finalNorm: T5LayerNorm
-    @ModuleInfo(key: "relBias") var relBias: T5RelativeAttentionBias
+    let relBias: T5RelativeAttentionBias
 
     init(_ config: ChronosConfiguration) {
         self._blocks.wrappedValue = (0 ..< config.numLayers).map { _ in T5EncoderBlock(config) }
         self._finalNorm.wrappedValue = T5LayerNorm(dimensions: config.dModel)
-        self._relBias.wrappedValue = T5RelativeAttentionBias(
+        self.relBias = T5RelativeAttentionBias(
             numBuckets: config.relativeAttentionNumBuckets,
             maxDistance: config.relativeAttentionMaxDistance,
             numHeads: config.numHeads,
@@ -681,14 +681,14 @@ class ChronosEncoder: Module {
 class ChronosDecoder: Module {
     @ModuleInfo(key: "block") var blocks: [T5DecoderBlock]
     @ModuleInfo(key: "final_layer_norm") var finalNorm: T5LayerNorm
-    @ModuleInfo(key: "relBias") var relBias: T5RelativeAttentionBias
+    let relBias: T5RelativeAttentionBias
 
     init(_ config: ChronosConfiguration) {
         self._blocks.wrappedValue = (0 ..< config.numDecoderLayers).map { _ in
             T5DecoderBlock(config)
         }
         self._finalNorm.wrappedValue = T5LayerNorm(dimensions: config.dModel)
-        self._relBias.wrappedValue = T5RelativeAttentionBias(
+        self.relBias = T5RelativeAttentionBias(
             numBuckets: config.relativeAttentionNumBuckets,
             maxDistance: config.relativeAttentionMaxDistance,
             numHeads: config.numHeads,

@@ -95,40 +95,59 @@ class S5Block: Module {
         self._logDelta.wrappedValue = MLXArray.zeros([stateDim])
     }
 
-    /// Forward pass using real-valued approximation of the S5 convolution.
+    /// Forward pass using full complex S5 recurrence.
+    ///
+    /// The S5 SSM operates in the diagonalized complex eigenspace.
+    /// State, eigenvalues, B and C matrices all have real + imaginary parts.
+    /// MLX has no native complex type so real/imaginary are tracked separately.
+    ///
+    /// State update: s_{t+1} = A_bar * s_t + B_tilde * u_t  (complex multiply)
+    /// Output:       y_t = 2 * Re(C_tilde * s_t) + D * u_t
     ///
     /// - Parameter x: Input of shape `[L, B, stateDim]`.
     /// - Returns: Output of shape `[L, B, stateDim]`.
     func callAsFunction(_ x: MLXArray) -> MLXArray {
         let L = x.dim(0)
+        let B = x.dim(1)
 
-        // Compute discrete eigenvalues
-        let lambdaReal = MLX.negative(MLX.exp(logLambdaReal))  // [stateDim]
-        let delta = MLX.exp(logDelta)  // [stateDim]
+        // Discretize complex eigenvalue: A_bar = exp((lambda_r + i*lambda_i) * delta)
+        let lambdaR = MLX.negative(MLX.exp(logLambdaReal))  // [stateDim]
+        let delta = MLX.exp(logDelta)                        // [stateDim]
+        let rdelta = lambdaR * delta
+        let idelta = lambdaImag * delta
+        let expR = MLX.exp(rdelta)
+        let aBarR = expR * MLX.cos(idelta)  // real part of A_bar [stateDim]
+        let aBarI = expR * MLX.sin(idelta)  // imag part of A_bar [stateDim]
 
-        // Discretize: A_bar = exp(lambda * delta), real part approximation
-        let aBarReal = MLX.exp(lambdaReal * delta)  // [stateDim]
+        // Project input through B (complex): Bu = (B_r + i*B_i) * u
+        // x: [L, B, stateDim], B_tilde: [stateDim, stateDim]
+        let buR = MLX.matmul(x, bTildeR.transposed())  // [L, B, stateDim]
+        let buI = MLX.matmul(x, bTildeI.transposed())  // [L, B, stateDim]
 
-        // Build convolution kernel: kernel[k] = A_bar^(L-1-k) for k = 0..L-1
-        // Project input through B: Bu = x @ B_tilde_r^T (real part)
-        // x: [L, B, stateDim], B_tilde_r: [stateDim, stateDim]
-        let bu = MLX.matmul(x, bTildeR.transposed())  // [L, B, stateDim]
-
-        // Scan-based recurrence (more MLX-friendly than FFT convolution)
+        // Sequential complex recurrence
+        var sR = MLXArray.zeros([B, stateDim])  // real part of state
+        var sI = MLXArray.zeros([B, stateDim])  // imag part of state
         var outputs = [MLXArray]()
-        var state = MLXArray.zeros([x.dim(1), stateDim])
+
         for t in 0 ..< L {
-            let inputT = bu[t]  // [B, stateDim]
-            state = state * aBarReal + inputT
-            outputs.append(state.expandedDimensions(axis: 0))
+            let inR = buR[t]  // [B, stateDim]
+            let inI = buI[t]
+
+            // Complex multiply: A_bar * state
+            let newSR = aBarR * sR - aBarI * sI + inR
+            let newSI = aBarR * sI + aBarI * sR + inI
+            sR = newSR
+            sI = newSI
+
+            // Output: 2 * Re(C_tilde * state) + D * u
+            // Re(C * s) = C_r * s_r - C_i * s_i
+            let y = 2 * (MLX.matmul(sR, cTildeR.transposed())
+                       - MLX.matmul(sI, cTildeI.transposed()))
+                      + x[t] * dMatrix
+            outputs.append(y.expandedDimensions(axis: 0))
         }
-        let output = MLX.concatenated(outputs, axis: 0)  // [L, B, stateDim]
 
-        // Project through C and add skip connection D
-        let projected = MLX.matmul(output, cTildeR.transposed())  // [L, B, stateDim]
-        let skip = x * dMatrix  // [L, B, stateDim]
-
-        return projected + skip
+        return MLX.concatenated(outputs, axis: 0)  // [L, B, stateDim]
     }
 }
 

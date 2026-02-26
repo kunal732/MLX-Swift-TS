@@ -14,11 +14,11 @@ public class SwiGLUMLP: Module {
     @ModuleInfo(key: "gate_up") var gateUp: Linear
     @ModuleInfo(key: "down") var down: Linear
 
-    public init(embedDim: Int, mlpHiddenDim: Int) {
+    public init(embedDim: Int, mlpHiddenDim: Int, bias: Bool = true) {
         // gate_up projects to 2x hidden dim (split into gate and value)
-        self._gateUp.wrappedValue = Linear(embedDim, 2 * mlpHiddenDim)
+        self._gateUp.wrappedValue = Linear(embedDim, 2 * mlpHiddenDim, bias: bias)
         // down projects from hidden dim back to embed dim
-        self._down.wrappedValue = Linear(mlpHiddenDim, embedDim)
+        self._down.wrappedValue = Linear(mlpHiddenDim, embedDim, bias: bias)
     }
 
     public func callAsFunction(_ x: MLXArray) -> MLXArray {

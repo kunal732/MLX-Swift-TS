@@ -619,11 +619,27 @@ public class ChronosModel: Module, TimeSeriesModel {
 
     public func sanitize(weights: [String: MLXArray]) -> [String: MLXArray] {
         var result = weights
+
         // lm_head.weight is tied to shared.weight in T5. The convert script omits
         // it to save space, so restore the tie here before loading.
         if result["lm_head.weight"] == nil, let sharedWeight = result["shared.weight"] {
             result["lm_head.weight"] = sharedWeight
         }
+
+        // T5 stores relative attention bias inside block 0 but Swift holds it at
+        // the encoder/decoder level as relBias. Remap to the expected key path.
+        let relBiasRemap: [(String, String)] = [
+            ("encoder.block.0.layer.0.SelfAttention.relative_attention_bias.weight",
+             "encoder.relBias.relative_attention_bias.weight"),
+            ("decoder.block.0.layer.0.SelfAttention.relative_attention_bias.weight",
+             "decoder.relBias.relative_attention_bias.weight"),
+        ]
+        for (oldKey, newKey) in relBiasRemap {
+            if let value = result.removeValue(forKey: oldKey) {
+                result[newKey] = value
+            }
+        }
+
         return result
     }
 
@@ -636,13 +652,12 @@ public class ChronosModel: Module, TimeSeriesModel {
 class ChronosEncoder: Module {
     @ModuleInfo(key: "block") var blocks: [T5EncoderBlock]
     @ModuleInfo(key: "final_layer_norm") var finalNorm: T5LayerNorm
-
-    let relBias: T5RelativeAttentionBias
+    @ModuleInfo(key: "relBias") var relBias: T5RelativeAttentionBias
 
     init(_ config: ChronosConfiguration) {
         self._blocks.wrappedValue = (0 ..< config.numLayers).map { _ in T5EncoderBlock(config) }
         self._finalNorm.wrappedValue = T5LayerNorm(dimensions: config.dModel)
-        self.relBias = T5RelativeAttentionBias(
+        self._relBias.wrappedValue = T5RelativeAttentionBias(
             numBuckets: config.relativeAttentionNumBuckets,
             maxDistance: config.relativeAttentionMaxDistance,
             numHeads: config.numHeads,
@@ -666,15 +681,14 @@ class ChronosEncoder: Module {
 class ChronosDecoder: Module {
     @ModuleInfo(key: "block") var blocks: [T5DecoderBlock]
     @ModuleInfo(key: "final_layer_norm") var finalNorm: T5LayerNorm
-
-    let relBias: T5RelativeAttentionBias
+    @ModuleInfo(key: "relBias") var relBias: T5RelativeAttentionBias
 
     init(_ config: ChronosConfiguration) {
         self._blocks.wrappedValue = (0 ..< config.numDecoderLayers).map { _ in
             T5DecoderBlock(config)
         }
         self._finalNorm.wrappedValue = T5LayerNorm(dimensions: config.dModel)
-        self.relBias = T5RelativeAttentionBias(
+        self._relBias.wrappedValue = T5RelativeAttentionBias(
             numBuckets: config.relativeAttentionNumBuckets,
             maxDistance: config.relativeAttentionMaxDistance,
             numHeads: config.numHeads,

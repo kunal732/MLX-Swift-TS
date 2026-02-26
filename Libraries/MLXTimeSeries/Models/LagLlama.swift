@@ -172,7 +172,7 @@ class LagLlamaBlock: Module {
         self._norm2.wrappedValue = RMSNorm(dimensions: config.dModel)
         self._attention.wrappedValue = LagLlamaAttention(config)
         self._mlp.wrappedValue = SwiGLUMLP(
-            embedDim: config.dModel, mlpHiddenDim: config.intermediateSize)
+            embedDim: config.dModel, mlpHiddenDim: config.intermediateSize, bias: false)
     }
 
     func callAsFunction(

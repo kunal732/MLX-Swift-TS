@@ -405,6 +405,8 @@ public class KairosModel: Module, TimeSeriesModel {
         var result = [String: MLXArray]()
         for (key, value) in weights {
             if key.contains("inv_freq") { continue }
+            // Strip extra keys not used by the Swift model
+            if key.hasPrefix("patch.") || key.hasPrefix("fft_norm.") { continue }
             result[key] = value
         }
         return result

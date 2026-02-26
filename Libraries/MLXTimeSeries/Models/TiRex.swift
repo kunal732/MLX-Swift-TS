@@ -136,12 +136,43 @@ class SLSTMCell: Module {
     }
 }
 
+/// Per-head linear projection matching TiRex's headwise gate structure.
+///
+/// Stores weight as `[numHeads, headDim, headDim]` (matching the checkpoint)
+/// and applies each head's projection independently.
+class PerHeadLinear: Module {
+    @ModuleInfo(key: "weight") var weight: MLXArray
+
+    let numHeads: Int
+    let headDim: Int
+
+    init(numHeads: Int, headDim: Int) {
+        self.numHeads = numHeads
+        self.headDim = headDim
+        self._weight.wrappedValue = MLXArray.zeros([numHeads, headDim, headDim])
+    }
+
+    /// - Parameter x: Input `[B, L, numHeads * headDim]`
+    /// - Returns: Output `[B, L, numHeads * headDim]`
+    func callAsFunction(_ x: MLXArray) -> MLXArray {
+        let B = x.dim(0)
+        let L = x.dim(1)
+        // [B, L, numHeads*headDim] -> [numHeads, B*L, headDim]
+        let xHeads = x.reshaped(B * L, numHeads, headDim).transposed(1, 0, 2)
+        // weight: [numHeads, headDim_out, headDim_in] -> apply as xHeads @ weight.T
+        // [numHeads, B*L, headDim] @ [numHeads, headDim, headDim] -> [numHeads, B*L, headDim]
+        let out = MLX.matmul(xHeads, weight.transposed(0, 2, 1))
+        // [numHeads, B*L, headDim] -> [B*L, numHeads, headDim] -> [B, L, numHeads*headDim]
+        return out.transposed(1, 0, 2).reshaped(B, L, numHeads * headDim)
+    }
+}
+
 /// sLSTM layer with headwise gate projections.
 class SLSTMLayer: Module {
-    @ModuleInfo(key: "fgate") var fGate: Linear
-    @ModuleInfo(key: "igate") var iGate: Linear
-    @ModuleInfo(key: "zgate") var zGate: Linear
-    @ModuleInfo(key: "ogate") var oGate: Linear
+    @ModuleInfo(key: "fgate") var fGate: PerHeadLinear
+    @ModuleInfo(key: "igate") var iGate: PerHeadLinear
+    @ModuleInfo(key: "zgate") var zGate: PerHeadLinear
+    @ModuleInfo(key: "ogate") var oGate: PerHeadLinear
     @ModuleInfo(key: "slstm_cell") var cell: SLSTMCell
     @ModuleInfo(key: "group_norm") var groupNorm: RMSNorm
 
@@ -151,11 +182,10 @@ class SLSTMLayer: Module {
     init(embeddingDim: Int, numHeads: Int) {
         self.numHeads = numHeads
         self.headDim = embeddingDim / numHeads
-        // Each gate projects from embeddingDim to embeddingDim
-        self._fGate.wrappedValue = Linear(embeddingDim, embeddingDim, bias: false)
-        self._iGate.wrappedValue = Linear(embeddingDim, embeddingDim, bias: false)
-        self._zGate.wrappedValue = Linear(embeddingDim, embeddingDim, bias: false)
-        self._oGate.wrappedValue = Linear(embeddingDim, embeddingDim, bias: false)
+        self._fGate.wrappedValue = PerHeadLinear(numHeads: numHeads, headDim: headDim)
+        self._iGate.wrappedValue = PerHeadLinear(numHeads: numHeads, headDim: headDim)
+        self._zGate.wrappedValue = PerHeadLinear(numHeads: numHeads, headDim: headDim)
+        self._oGate.wrappedValue = PerHeadLinear(numHeads: numHeads, headDim: headDim)
         self._cell.wrappedValue = SLSTMCell(numHeads: numHeads, headDim: headDim)
         self._groupNorm.wrappedValue = RMSNorm(dimensions: embeddingDim)
     }
@@ -169,7 +199,7 @@ class SLSTMLayer: Module {
         let L = x.dim(1)
         let embDim = numHeads * headDim
 
-        // Compute gate projections for all time steps at once
+        // Compute per-head gate projections for all time steps at once
         let fAll = fGate(x).reshaped(B, L, numHeads, headDim)
         let iAll = iGate(x).reshaped(B, L, numHeads, headDim)
         let zAll = zGate(x).reshaped(B, L, numHeads, headDim)

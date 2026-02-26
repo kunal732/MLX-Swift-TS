@@ -118,8 +118,10 @@ public class TimeSeriesForecaster {
         }
 
         // Load weights into model
+        // Use .allModelKeysSet only — verifies every model parameter has a weight,
+        // but silently ignores extra keys in the file (e.g. unused buffers like fft_norm).
         let parameters = ModuleParameters.unflattened(weights)
-        try model.update(parameters: parameters, verify: [.all])
+        try model.update(parameters: parameters, verify: [.allModelKeysSet])
         eval(model)
 
         return TimeSeriesForecaster(model: model, baseConfig: baseConfig)

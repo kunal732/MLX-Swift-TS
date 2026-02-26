@@ -12,6 +12,7 @@ let package = Package(
         .library(
             name: "MLXTimeSeries",
             targets: ["MLXTimeSeries"]),
+        .executable(name: "TSInfer", targets: ["TSInfer"]),
     ],
     dependencies: [
         .package(
@@ -35,6 +36,14 @@ let package = Package(
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]
+        ),
+        .executableTarget(
+            name: "TSInfer",
+            dependencies: [
+                "MLXTimeSeries",
+                .product(name: "MLX", package: "mlx-swift"),
+            ],
+            path: "Tools/TSInfer"
         ),
         .testTarget(
             name: "MLXTimeSeriesTests",

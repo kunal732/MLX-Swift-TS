@@ -587,7 +587,6 @@ public class ChronosModel: Module, TimeSeriesModel {
 
         // Decode autoregressively
         let predLength = predictionLength
-        // Start with EOS token (id=1) as decoder input
         var decoderInput = MLXArray([Int32(1)]).reshaped(1, 1)
         decoderInput = MLX.broadcast(decoderInput, to: [series.dim(0), 1])
 
@@ -597,11 +596,11 @@ public class ChronosModel: Module, TimeSeriesModel {
             let decoderEmbed = shared(decoderInput)
             let decoderOutput = decoder(decoderEmbed, encoderOutput: encoderOutput, caches: caches)
             let logits = lmHead(decoderOutput)  // [B, 1, vocabSize]
-            allLogits.append(logits[.ellipsis, (logits.dim(1) - 1), 0...])
+            let stepLogits = logits[.ellipsis, (logits.dim(1) - 1), 0...]
+            allLogits.append(stepLogits)
 
             // Greedy: take argmax as next input
-            let nextToken = MLX.argMax(logits[.ellipsis, (logits.dim(1) - 1), 0...], axis: -1)
-                .asType(.int32)
+            let nextToken = MLX.argMax(stepLogits, axis: -1).asType(.int32)
             decoderInput = nextToken.expandedDimensions(axis: -1)
         }
 

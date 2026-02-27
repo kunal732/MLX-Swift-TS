@@ -82,7 +82,8 @@ Task {
         // when the MLX metallib is available in the build).
         // On plain `swift run` without a bundled metallib this will crash; run via
         // Xcode or `swift build -c release && .build/release/TSInfer ...` instead.
-        let mean = prediction.mean.squeezed()
+        // Reshape to [predictionLength] regardless of batch/variate dims.
+        let mean = prediction.mean.reshaped(-1)
         eval(mean)
 
         let elapsed = Date().timeIntervalSince(start) * 1000

@@ -588,50 +588,34 @@ public class ChronosModel: Module, TimeSeriesModel {
         let tokenEmbeddings = shared(tokens)
         let encoderOutput = encoder(tokenEmbeddings)
 
-        // Chronos was designed for stochastic inference: generate multiple samples
-        // and average them. Greedy/deterministic decoding collapses to the mode.
+        // Single-pass greedy decode: at each step take argmax, feed back as next
+        // token, accumulate logits, then compute expected value via decodeMean.
+        // Sampling (20 passes × predLength) freezes the UI for long sequences.
+        // The expected value (mean ≈ median for Chronos's peaked distribution)
+        // is equally accurate and runs in a single pass.
         let predLength = predictionLength
-        let numSamples = config.chronosConfig.numSamples  // typically 20
-        let temperature = config.chronosConfig.temperature
         let B = series.dim(0)
+        var decoderInput = MLXArray([Int32(1)]).reshaped(1, 1)
+        decoderInput = MLX.broadcast(decoderInput, to: [B, 1])
 
-        var samplePredictions = [MLXArray]()  // each: [B, predLength]
+        var allLogits = [MLXArray]()
 
-        for _ in 0 ..< numSamples {
-            // Fresh caches for each sample
-            let sampleCaches = newCaches()
-            var decoderInput = MLXArray([Int32(1)]).reshaped(1, 1)
-            decoderInput = MLX.broadcast(decoderInput, to: [B, 1])
+        for step in 0 ..< predLength {
+            let decoderEmbed = shared(decoderInput)
+            let decoderOutput = decoder(
+                decoderEmbed, encoderOutput: encoderOutput,
+                caches: caches, stepOffset: step)
+            let logits = lmHead(decoderOutput)
+            let stepLogits = logits[0..., (logits.dim(1) - 1), 0...]
+            allLogits.append(stepLogits)
 
-            var sampleLogits = [MLXArray]()
-
-            for step in 0 ..< predLength {
-                let decoderEmbed = shared(decoderInput)
-                let decoderOutput = decoder(
-                    decoderEmbed, encoderOutput: encoderOutput,
-                    caches: sampleCaches, stepOffset: step)
-                let logits = lmHead(decoderOutput)
-                let stepLogits = logits[0..., (logits.dim(1) - 1), 0...]
-                sampleLogits.append(stepLogits)
-
-                // Sample next token via Gumbel-max trick (temperature sampling)
-                let scaledLogits = stepLogits.asType(DType.float32) / temperature
-                let noise = MLXRandom.uniform(low: Float(1e-10), high: Float(1.0 - 1e-10),
-                                              [B, config.vocabSize])
-                let gumbel = -MLX.log(-MLX.log(noise))
-                let nextToken = MLX.argMax(scaledLogits + gumbel, axis: -1).asType(DType.int32)
-                decoderInput = nextToken.expandedDimensions(axis: -1)
-            }
-
-            let stackedSample = MLX.stacked(sampleLogits, axis: 1)  // [B, predLength, vocabSize]
-            let sampleMean = tokenizer.decodeMean(logits: stackedSample, scale: scale)
-            samplePredictions.append(sampleMean)
+            // Greedy: argmax as next input token
+            let nextToken = MLX.argMax(stepLogits, axis: -1).asType(DType.int32)
+            decoderInput = nextToken.expandedDimensions(axis: -1)
         }
 
-        // Average across samples: [B, predLength]
-        let allSamples = MLX.stacked(samplePredictions, axis: 0)  // [numSamples, B, predLength]
-        let mean = allSamples.mean(axis: 0)  // [B, predLength]
-
+        let stackedLogits = MLX.stacked(allLogits, axis: 1)  // [B, predLength, vocabSize]
+        let mean = tokenizer.decodeMean(logits: stackedLogits, scale: scale)
         let meanOut = mean.expandedDimensions(axis: 1)
 
         return TimeSeriesPrediction(

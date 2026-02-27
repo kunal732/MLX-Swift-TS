@@ -275,12 +275,10 @@ class T5Attention: Module {
 
     let numHeads: Int
     let headDim: Int
-    let scale: Float
 
     init(dModel: Int, dKv: Int, numHeads: Int) {
         self.numHeads = numHeads
         self.headDim = dKv
-        self.scale = pow(Float(dKv), -0.5)
         self._wQ.wrappedValue = Linear(dModel, numHeads * dKv, bias: false)
         self._wK.wrappedValue = Linear(dModel, numHeads * dKv, bias: false)
         self._wV.wrappedValue = Linear(dModel, numHeads * dKv, bias: false)
@@ -314,8 +312,10 @@ class T5Attention: Module {
             effectiveMask = .array(positionBias)
         }
 
+        // T5 does not apply 1/sqrt(d_kv) scaling — the relative position bias
+        // absorbs the role of scaling. Use scale=1.0 to match the original.
         let output = MLXFast.scaledDotProductAttention(
-            queries: q, keys: k, values: v, scale: scale, mask: effectiveMask
+            queries: q, keys: k, values: v, scale: 1.0, mask: effectiveMask
         )
 
         let out = output.transposed(0, 2, 1, 3).reshaped(B, L, -1)

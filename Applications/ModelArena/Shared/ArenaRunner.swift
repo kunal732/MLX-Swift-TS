@@ -30,9 +30,12 @@ let defaultHubModels: [HubModel] = [
     HubModel(name: "TimesFM 2.5", hubID: "kunal732/timesfm-2.5-200m-transformers-mlx"),
     HubModel(name: "Chronos-2", hubID: "kunal732/chronos-2-synth-mlx"),
     HubModel(name: "Lag-Llama", hubID: "kunal732/Lag-Llama-mlx"),
-    HubModel(name: "FlowState", hubID: "kunal732/granite-timeseries-flowstate-r1-mlx"),
     HubModel(name: "TiRex", hubID: "kunal732/TiRex-mlx"),
 ]
+// FlowState (IBM SSM) removed from defaults: designed for longer contexts
+// (min_context=2048) and requires time-of-day frequency features not
+// available in the live CPU demo. Load manually via HF ID for batch
+// time series forecasting on longer inputs.
 
 /// A single model slot in the arena.
 struct ModelSlot: Identifiable {

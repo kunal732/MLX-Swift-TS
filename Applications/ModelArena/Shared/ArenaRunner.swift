@@ -28,7 +28,6 @@ struct HubModel: Identifiable, Hashable {
 let defaultHubModels: [HubModel] = [
     HubModel(name: "Toto", hubID: "kunal732/Toto-Open-Base-1.0-MLX"),
     HubModel(name: "TimesFM 2.5", hubID: "kunal732/timesfm-2.5-200m-transformers-mlx"),
-    HubModel(name: "Chronos", hubID: "kunal732/chronos-t5-base-mlx"),
     HubModel(name: "Chronos-2", hubID: "kunal732/chronos-2-synth-mlx"),
     HubModel(name: "Lag-Llama", hubID: "kunal732/Lag-Llama-mlx"),
     HubModel(name: "FlowState", hubID: "kunal732/granite-timeseries-flowstate-r1-mlx"),

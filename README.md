@@ -169,6 +169,8 @@ open Applications/ModelArena/ModelArena.xcodeproj
 
 Load models by entering a HuggingFace Hub ID directly in the app, or use the file picker to load a locally converted model.
 
+The app defaults to Toto, TimesFM 2.5, Chronos-2, Lag-Llama, FlowState, Kairos, and TiRex. Chronos (T5 encoder-decoder) requires sampling-based inference for good results and is best used outside the live demo context.
+
 ## Project Structure
 
 ```

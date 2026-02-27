@@ -75,10 +75,12 @@ public struct LagFeatureExtractor: Sendable {
         let B = values.dim(0)
         let T = values.dim(1)
 
-        // We need enough history to look back by the maximum lag
+        // We need enough history to look back by the maximum lag.
+        // If T < maxLag the series is too short — use whatever is available
+        // by capping startIdx to T-1 so L >= 1.
         let maxLag = lags.max() ?? 0
-        let startIdx = max(maxLag, 0)
-        let L = min(T - startIdx, contextLength)
+        let startIdx = min(max(maxLag, 0), max(T - 1, 0))
+        let L = max(min(T - startIdx, contextLength), 1)
 
         var features = [MLXArray]()
 

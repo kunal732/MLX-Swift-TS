@@ -113,6 +113,7 @@ public class TotoModel: Module, TimeSeriesModel {
         let denomLoc = runLoc[.ellipsis, (T - 1) ..< T]     // [B, V, 1]
         let denomScale = runScale[.ellipsis, (T - 1) ..< T]  // [B, V, 1]
 
+
         for _ in 0 ..< numFuturePatches {
             let nP = output.params.df.dim(-3)
             let lastPatchParams = MixtureParams(

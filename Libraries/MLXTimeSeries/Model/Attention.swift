@@ -49,10 +49,13 @@ public class TotoAttention: Module {
         let qkv = wQKV(x)  // [B', L, 3*D]
         let qkvParts = qkv.split(parts: 3, axis: -1)  // 3x [B', L, D]
 
-        // Reshape to multi-head: [B', L, D] -> [B', nHeads, L, headDim]
-        var q = qkvParts[0].reshaped(Bp, L, numHeads, headDim).transposed(0, 2, 1, 3)
-        var k = qkvParts[1].reshaped(Bp, L, numHeads, headDim).transposed(0, 2, 1, 3)
-        var v = qkvParts[2].reshaped(Bp, L, numHeads, headDim).transposed(0, 2, 1, 3)
+        // Toto stores QKV with head_dim as the outer dimension and n_heads as
+        // the inner dimension: layout is (head_dim=64, n_heads=12) not (n_heads, head_dim).
+        // This matches the einops pattern: (qkv head_dim n_heads) used during training.
+        // Fix: reshape as [headDim, numHeads] then transpose to [numHeads, L, headDim].
+        var q = qkvParts[0].reshaped(Bp, L, headDim, numHeads).transposed(0, 3, 1, 2)
+        var k = qkvParts[1].reshaped(Bp, L, headDim, numHeads).transposed(0, 3, 1, 2)
+        var v = qkvParts[2].reshaped(Bp, L, headDim, numHeads).transposed(0, 3, 1, 2)
 
         // Apply RoPE+XPOS (time-wise only)
         if !isSpacewise, let rope {

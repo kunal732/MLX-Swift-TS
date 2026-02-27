@@ -396,9 +396,12 @@ class T5LayerNorm: Module {
     }
 
     func callAsFunction(_ x: MLXArray) -> MLXArray {
-        let variance = (x * x).mean(axis: -1, keepDims: true)
-        let normalized = x * MLX.rsqrt(variance + eps)
-        return weight * normalized
+        // Compute variance in float32 to avoid overflow with float16 inputs
+        // (matches the original HuggingFace T5 implementation).
+        let xF32 = x.asType(.float32)
+        let variance = (xF32 * xF32).mean(axis: -1, keepDims: true)
+        let normalized = xF32 * MLX.rsqrt(variance + eps)
+        return (weight.asType(.float32) * normalized).asType(x.dtype)
     }
 }
 

@@ -277,6 +277,7 @@ public class TimesFMModel: Module, TimeSeriesModel {
         let quantileReshaped = quantileOut.reshaped(B * V, nQ + 1, qHL)
         let meanPred = quantileReshaped[0..., 0, 0...]  // [B*V, qHL] — point forecast
 
+
         // Trim to requested prediction length
         let actualPredLen = min(predictionLength, qHL)
         let trimmed = meanPred[0..., 0..<actualPredLen]  // [B*V, actualPredLen]

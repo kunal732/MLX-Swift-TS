@@ -282,20 +282,23 @@ def convert_chronos_v2(model_dir: Path) -> tuple[dict[str, mx.array], dict]:
 
 
 def convert_timesfm(model_dir: Path) -> tuple[dict[str, mx.array], dict]:
-    """Convert TimesFM (v2.0 or v2.5) to MLX format."""
+    """Convert TimesFM (v2.0, v2.5 pytorch, or v2.5 transformers) to MLX format."""
     print("Converting TimesFM model...")
     weights = load_safetensors_weights(model_dir)
     hf_config = load_hf_config(model_dir)
 
-    # Weights are kept as-is — the Swift model uses ModuleInfo keys
-    # matching the original weight structure (tokenizer.*, stacked_xf.*, etc.)
+    # Detect transformers variant by presence of decoder.layers keys
+    is_transformers = any(k.startswith("decoder.layers.") for k in weights)
+
+    if is_transformers:
+        return _convert_timesfm_transformers(weights, hf_config)
+
+    # --- Original pytorch variant (weights kept as-is) ---
     remapped = dict(weights)
 
     backbone_cfg = hf_config.get("backbone_config", hf_config)
     num_quantiles = len(hf_config.get("quantiles", [0.1]*9))
 
-    # Infer actual patch_length from tokenizer weight shape, since HF config
-    # may report the base patch size rather than the effective tokenizer input dim
     patch_length = hf_config.get("patch_length", 32)
     if "tokenizer.hidden_layer.weight" in weights:
         patch_length = weights["tokenizer.hidden_layer.weight"].shape[-1]
@@ -315,9 +318,104 @@ def convert_timesfm(model_dir: Path) -> tuple[dict[str, mx.array], dict]:
         "context_length": hf_config.get("context_length", 16384),
         "prediction_length": hf_config.get("horizon_length", 128),
         "use_positional_encoding": backbone_cfg.get("use_positional_encoding", False),
+        "query_pre_attn_scalar": float(backbone_cfg.get("head_dim", 80)),  # pytorch uses headDim
     }
 
     print(f"  Loaded {len(remapped)} weight tensors")
+    return remapped, config
+
+
+def _convert_timesfm_transformers(weights: dict, hf_config: dict) -> tuple[dict[str, mx.array], dict]:
+    """Convert TimesFM 2.5 transformers variant to MLX format.
+
+    The transformers variant uses separate Q/K/V projections, standard RoPE,
+    and key names under decoder.layers.N.* instead of stacked_xf.N.*.
+    We fuse Q/K/V and remap to match the existing Swift TimesFMModel layout.
+    """
+    print("  Detected transformers variant — fusing Q/K/V and remapping keys")
+    import re as _re
+
+    num_layers = hf_config.get("num_hidden_layers", 20)
+    remapped = {}
+
+    for key, value in weights.items():
+        # Tokenizer: decoder.input_ff_layer.* -> tokenizer.*
+        if key.startswith("decoder.input_ff_layer."):
+            remapped[key.replace("decoder.input_ff_layer.", "tokenizer.")] = value
+            continue
+
+        # Transformer layers: decoder.layers.N.* -> stacked_xf.N.*
+        if m := _re.match(r"decoder\.layers\.(\d+)\.(.*)", key):
+            n, rest = m.group(1), m.group(2)
+            # Attention sub-keys
+            if rest.startswith("self_attn."):
+                attn_rest = rest[len("self_attn."):]
+                if attn_rest == "scaling":
+                    # Per-dim scale: stacked_xf.N.attn.per_dim_scale.per_dim_scale
+                    remapped[f"stacked_xf.{n}.attn.per_dim_scale.per_dim_scale"] = value
+                elif attn_rest == "o_proj.weight":
+                    remapped[f"stacked_xf.{n}.attn.out.weight"] = value
+                elif attn_rest in ("query_ln.weight", "key_ln.weight"):
+                    remapped[f"stacked_xf.{n}.attn.{attn_rest}"] = value
+                # q/k/v collected separately below
+            # MLP sub-keys
+            elif rest.startswith("mlp."):
+                mlp_rest = rest[len("mlp."):]
+                remapped[f"stacked_xf.{n}.{mlp_rest}"] = value
+            # Layer norms
+            elif rest in ("pre_attn_ln.weight", "post_attn_ln.weight",
+                          "pre_ff_ln.weight", "post_ff_ln.weight"):
+                remapped[f"stacked_xf.{n}.{rest}"] = value
+            continue
+
+        # Output heads and horizon FF — keep as-is
+        remapped[key] = value
+
+    # Fuse separate Q, K, V into single qkv_proj per layer
+    for i in range(num_layers):
+        q_key = f"stacked_xf.{i}.attn.q_proj.weight"
+        k_key = f"stacked_xf.{i}.attn.k_proj.weight"
+        v_key = f"stacked_xf.{i}.attn.v_proj.weight"
+        # The q/k/v keys from decoder.layers.N.self_attn.{q,k,v}_proj.weight
+        # were not remapped above — grab them from original weights
+        raw_q = weights.get(f"decoder.layers.{i}.self_attn.q_proj.weight")
+        raw_k = weights.get(f"decoder.layers.{i}.self_attn.k_proj.weight")
+        raw_v = weights.get(f"decoder.layers.{i}.self_attn.v_proj.weight")
+        if raw_q is not None and raw_k is not None and raw_v is not None:
+            remapped[f"stacked_xf.{i}.attn.qkv_proj.weight"] = mx.concatenate(
+                [raw_q, raw_k, raw_v], axis=0)
+
+    # Infer patch_length from tokenizer input dim
+    if "tokenizer.hidden_layer.weight" in remapped:
+        patch_length = remapped["tokenizer.hidden_layer.weight"].shape[-1]
+        print(f"  Inferred patch_length={patch_length} from tokenizer weights")
+    else:
+        patch_length = hf_config.get("patch_length", 32)
+
+    num_quantiles = len(hf_config.get("quantiles", [0.1]*9))
+
+    config = {
+        "model_type": "timesfm",
+        "ts_model_class": "TimesFMModel",
+        "hidden_size": hf_config.get("hidden_size", 1280),
+        "num_layers": hf_config.get("num_hidden_layers", 20),
+        "num_heads": hf_config.get("num_attention_heads", 16),
+        "intermediate_size": hf_config.get("intermediate_size", 1280),
+        "head_dim": hf_config.get("head_dim", 80),
+        "patch_length": int(patch_length),
+        "quantile_horizon_length": hf_config.get("output_quantile_len", 1024),
+        "num_quantiles": num_quantiles,
+        "context_length": hf_config.get("context_length", 16384),
+        "prediction_length": hf_config.get("horizon_length", 128),
+        "use_positional_encoding": False,
+        # Transformers variant uses query_pre_attn_scalar instead of headDim for scaling
+        "query_pre_attn_scalar": float(hf_config.get("query_pre_attn_scalar", 256.0)),
+        "use_rope": True,
+        "rope_theta": float(hf_config.get("rope_theta", 10000.0)),
+        "use_horizon_ff": False,  # TODO: investigate amplification with horizon_ff_layer
+    }
+
+    print(f"  Loaded {len(remapped)} weight tensors (transformers variant)")
     return remapped, config
 
 

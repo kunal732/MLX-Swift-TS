@@ -17,6 +17,14 @@ public struct TimesFMConfiguration: Codable, Sendable {
     public var contextLength: Int
     public var predictionLength: Int
     public var usePositionalEncoding: Bool
+    /// Denominator for attention scaling. Pytorch variant: headDim (80).
+    /// Transformers variant: query_pre_attn_scalar (256 → sqrt=16).
+    public var queryPreAttnScalar: Float
+    /// Whether to apply RoPE positional encoding (transformers variant only).
+    public var useRope: Bool
+    public var ropeTheta: Float
+    /// Whether a horizon_ff_layer exists before the output heads (transformers variant).
+    public var useHorizonFF: Bool
 
     enum CodingKeys: String, CodingKey {
         case hiddenSize = "hidden_size"
@@ -30,32 +38,28 @@ public struct TimesFMConfiguration: Codable, Sendable {
         case contextLength = "context_length"
         case predictionLength = "prediction_length"
         case usePositionalEncoding = "use_positional_encoding"
+        case queryPreAttnScalar = "query_pre_attn_scalar"
+        case useRope = "use_rope"
+        case ropeTheta = "rope_theta"
+        case useHorizonFF = "use_horizon_ff"
     }
 
     public init(
-        hiddenSize: Int = 1280,
-        numLayers: Int = 20,
-        numHeads: Int = 16,
-        intermediateSize: Int = 1280,
-        headDim: Int = 80,
-        patchLength: Int = 32,
-        quantileHorizonLength: Int = 1024,
-        numQuantiles: Int = 9,
-        contextLength: Int = 16384,
-        predictionLength: Int = 128,
-        usePositionalEncoding: Bool = false
+        hiddenSize: Int = 1280, numLayers: Int = 20, numHeads: Int = 16,
+        intermediateSize: Int = 1280, headDim: Int = 80, patchLength: Int = 32,
+        quantileHorizonLength: Int = 1024, numQuantiles: Int = 9,
+        contextLength: Int = 16384, predictionLength: Int = 128,
+        usePositionalEncoding: Bool = false,
+        queryPreAttnScalar: Float = 80.0, useRope: Bool = false, ropeTheta: Float = 10000.0,
+        useHorizonFF: Bool = false
     ) {
-        self.hiddenSize = hiddenSize
-        self.numLayers = numLayers
-        self.numHeads = numHeads
-        self.intermediateSize = intermediateSize
-        self.headDim = headDim
-        self.patchLength = patchLength
-        self.quantileHorizonLength = quantileHorizonLength
-        self.numQuantiles = numQuantiles
-        self.contextLength = contextLength
-        self.predictionLength = predictionLength
-        self.usePositionalEncoding = usePositionalEncoding
+        self.hiddenSize = hiddenSize; self.numLayers = numLayers; self.numHeads = numHeads
+        self.intermediateSize = intermediateSize; self.headDim = headDim
+        self.patchLength = patchLength; self.quantileHorizonLength = quantileHorizonLength
+        self.numQuantiles = numQuantiles; self.contextLength = contextLength
+        self.predictionLength = predictionLength; self.usePositionalEncoding = usePositionalEncoding
+        self.queryPreAttnScalar = queryPreAttnScalar; self.useRope = useRope
+        self.ropeTheta = ropeTheta; self.useHorizonFF = useHorizonFF
     }
 }
 
@@ -98,10 +102,16 @@ class TimesFMAttention: Module {
 
     let numHeads: Int
     let headDim: Int
+    let queryPreAttnScalar: Float
+    let useRope: Bool
+    let ropeTheta: Float
 
     init(_ config: TimesFMConfiguration) {
         self.numHeads = config.numHeads
         self.headDim = config.headDim
+        self.queryPreAttnScalar = config.queryPreAttnScalar
+        self.useRope = config.useRope
+        self.ropeTheta = config.ropeTheta
         let totalDim = numHeads * headDim
         self._qkvProj.wrappedValue = Linear(config.hiddenSize, 3 * totalDim, bias: false)
         self._wO.wrappedValue = Linear(totalDim, config.hiddenSize, bias: false)
@@ -130,9 +140,16 @@ class TimesFMAttention: Module {
         q = queryLN(q)
         k = keyLN(k)
 
-        // Per-dimension learned scaling
+        // Per-dimension learned scaling (divided by sqrt of scalar for correct attention scale)
         let scale = softplus(perDimScaleModule.perDimScale).reshaped(1, 1, 1, headDim)
-        q = q * scale / Float(headDim)
+        q = q * scale / queryPreAttnScalar.squareRoot()
+
+        // Apply RoPE if enabled (transformers variant)
+        if useRope {
+            let offset = cache?.offset ?? 0
+            (q, k) = applyRoPE(queries: q, keys: k, offset: offset,
+                               theta: ropeTheta, headDim: headDim)
+        }
 
         var values = v
         if let cache {
@@ -149,6 +166,30 @@ class TimesFMAttention: Module {
 
         let out = output.transposed(0, 2, 1, 3).reshaped(B, L, -1)
         return wO(out)
+    }
+
+    /// Standard RoPE: rotate q and k using sinusoidal position encodings.
+    private func applyRoPE(
+        queries: MLXArray, keys: MLXArray, offset: Int, theta: Float, headDim: Int
+    ) -> (MLXArray, MLXArray) {
+        let L = queries.dim(2)
+        let halfDim = headDim / 2
+        let positions = MLXArray((offset ..< (offset + L)).map { Float($0) })  // [L]
+        let freqIndices = MLXArray((0 ..< halfDim).map { Float($0) })  // [halfDim]
+        let invFreqs = 1.0 / MLX.pow(MLXArray(theta), freqIndices * 2 / Float(headDim))
+        let angles = positions.reshaped(L, 1) * invFreqs.reshaped(1, halfDim)  // [L, halfDim]
+        let cosA = MLX.cos(angles).reshaped(1, 1, L, halfDim)  // [1, 1, L, halfDim]
+        let sinA = MLX.sin(angles).reshaped(1, 1, L, halfDim)
+
+        func rotate(_ x: MLXArray) -> MLXArray {
+            let xPairs = x.reshaped(x.dim(0), x.dim(1), x.dim(2), halfDim, 2)
+            let x0 = xPairs[.ellipsis, 0]
+            let x1 = xPairs[.ellipsis, 1]
+            let out = MLX.stacked([x0 * cosA - x1 * sinA, x0 * sinA + x1 * cosA], axis: -1)
+            return out.reshaped(x.shape)
+        }
+
+        return (rotate(queries), rotate(keys))
     }
 }
 
@@ -189,6 +230,9 @@ public class TimesFMModel: Module, TimeSeriesModel {
 
     @ModuleInfo(key: "tokenizer") var tokenizer: TimesFMResidualBlock
     @ModuleInfo(key: "stacked_xf") var layers: [TimesFMTransformerBlock]
+    /// Optional horizon FF layer (transformers variant only): refines hidden state
+    /// before the output projection heads.
+    @ModuleInfo(key: "horizon_ff_layer") var horizonFF: TimesFMResidualBlock?
     @ModuleInfo(key: "output_projection_point") var outputPoint: TimesFMResidualBlock
     @ModuleInfo(key: "output_projection_quantiles") var outputQuantiles: TimesFMResidualBlock
 
@@ -211,6 +255,13 @@ public class TimesFMModel: Module, TimeSeriesModel {
         self._outputQuantiles.wrappedValue = TimesFMResidualBlock(
             inputDim: config.hiddenSize, outputDim: quantileOutputDim,
             hiddenDim: config.hiddenSize, bias: false)
+        // Horizon FF layer present only in the transformers variant
+        if config.useHorizonFF {
+            self._horizonFF.wrappedValue = TimesFMResidualBlock(
+                inputDim: config.hiddenSize, outputDim: config.hiddenSize)
+        } else {
+            self._horizonFF.wrappedValue = nil
+        }
     }
 
     public func forecast(
@@ -262,8 +313,16 @@ public class TimesFMModel: Module, TimeSeriesModel {
         // Take last hidden state
         let lastHidden = hidden[0..., (nPatches - 1), 0...]  // [B*V, hiddenSize]
 
+        // Optional horizon FF layer (transformers variant): refine before output heads
+        let horizonHidden: MLXArray
+        if let hFF = horizonFF {
+            horizonHidden = hFF(lastHidden.expandedDimensions(axis: 1)).squeezed(axis: 1)
+        } else {
+            horizonHidden = lastHidden
+        }
+
         // Point forecast refinement
-        let pointHidden = outputPoint(lastHidden.expandedDimensions(axis: 1))
+        let pointHidden = outputPoint(horizonHidden.expandedDimensions(axis: 1))
             .squeezed(axis: 1)  // [B*V, hiddenSize]
 
         // Quantile forecast: produces all future steps at once

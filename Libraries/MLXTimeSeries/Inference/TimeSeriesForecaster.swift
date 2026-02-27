@@ -118,10 +118,13 @@ public class TimeSeriesForecaster {
             }
         }
 
-        // Load weights into model
+        // Load weights into model.
+        // Note: we intentionally skip eval(model) here to avoid blocking the
+        // loading thread with Metal shader compilation (which can take 20-30s
+        // for new dtypes like bfloat16). Weights are materialized lazily on
+        // first inference instead.
         let parameters = ModuleParameters.unflattened(weights)
         model.update(parameters: parameters)
-        eval(model)
 
         return TimeSeriesForecaster(model: model, baseConfig: baseConfig)
     }

@@ -666,9 +666,10 @@ public class ChronosModel: Module, TimeSeriesModel {
         return result
     }
 
-    // T5 models with small layer norm weights (~0.057) need float32 to keep
-    // attention layers numerically effective. float16 makes them collapse.
-    public var inferenceDtype: DType { .float32 }
+    // Use bfloat16 for T5: same exponent range as float32 (prevents overflow)
+    // but half the memory of float32. This is critical for iOS where loading
+    // 8 models simultaneously makes float32's 800MB+ footprint infeasible.
+    public var inferenceDtype: DType { .bfloat16 }
 
     public func newCaches() -> [TimeSeriesKVCache?] {
         (0 ..< config.numDecoderLayers).map { _ in TimeSeriesKVCache() }

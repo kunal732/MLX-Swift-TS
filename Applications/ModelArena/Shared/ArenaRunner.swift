@@ -31,7 +31,6 @@ let defaultHubModels: [HubModel] = [
     HubModel(name: "Chronos-2", hubID: "kunal732/chronos-2-synth-mlx"),
     HubModel(name: "Lag-Llama", hubID: "kunal732/Lag-Llama-mlx"),
     HubModel(name: "FlowState", hubID: "kunal732/granite-timeseries-flowstate-r1-mlx"),
-    HubModel(name: "Kairos", hubID: "kunal732/Kairos_50m-mlx"),
     HubModel(name: "TiRex", hubID: "kunal732/TiRex-mlx"),
 ]
 

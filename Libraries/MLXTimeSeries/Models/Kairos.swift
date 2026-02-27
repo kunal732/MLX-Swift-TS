@@ -407,7 +407,15 @@ public class KairosModel: Module, TimeSeriesModel {
             if key.contains("inv_freq") { continue }
             // Strip extra keys not used by the Swift model
             if key.hasPrefix("patch.") || key.hasPrefix("fft_norm.") { continue }
-            result[key] = value
+
+            // Kairos uses Mixture-of-Sizes patching: input_patch_embedding weights
+            // are 3D [levels, out, in]. Our ResidualBlock uses standard 2D Linear,
+            // so collapse by averaging across levels.
+            if value.ndim == 3 && key.contains("input_patch_embedding") {
+                result[key] = value.mean(axis: 0)
+            } else {
+                result[key] = value
+            }
         }
         return result
     }

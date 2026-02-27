@@ -238,10 +238,23 @@ public class LagLlamaModel: Module, TimeSeriesModel {
 
         // Extract lag features
         let lagFeatures = lagExtractor(normalized, contextLength: config.contextLength)
-        // lagFeatures: [B*V, L, numFeatures]
+        // lagFeatures: [B*V, L, numFeatures=lags+1]
+
+        // The model was trained with additional time covariates (time-of-day, etc.)
+        // appended to the lag features. We don't compute them, so pad with zeros
+        // to match the weight's actual input dimension.
+        let actualInputDim = inputProj.weight.dim(1)
+        let computedFeatures: MLXArray
+        if actualInputDim > lagFeatures.dim(-1) {
+            let pad = MLXArray.zeros([lagFeatures.dim(0), lagFeatures.dim(1),
+                                     actualInputDim - lagFeatures.dim(-1)])
+            computedFeatures = MLX.concatenated([lagFeatures, pad], axis: -1)
+        } else {
+            computedFeatures = lagFeatures
+        }
 
         // Project to hidden dim
-        var hidden = inputProj(lagFeatures)  // [B*V, L, dModel]
+        var hidden = inputProj(computedFeatures)  // [B*V, L, dModel]
 
         // Transformer layers
         for (i, layer) in layers.enumerated() {
@@ -260,13 +273,10 @@ public class LagLlamaModel: Module, TimeSeriesModel {
             let pred = params.mean()  // [B*V, 1]
             allPredictions.append(pred)
 
-            // Feed prediction back as a simple input (using zero lags as approximation)
-            let predFeatures = MLXArray.zeros([B * V, 1, lagExtractor.numFeatures])
-            // Set current value feature
-            let currentVal = pred.expandedDimensions(axis: -1)
-            // Use concatenation to set the first feature
-            let restFeatures = predFeatures[.ellipsis, 1...]
-            let nextFeatures = MLX.concatenated([currentVal, restFeatures], axis: -1)
+            // Feed prediction back with zeros for lags and time features
+            let currentVal = pred.expandedDimensions(axis: -1)  // [B*V, 1, 1]
+            let rest = MLXArray.zeros([B * V, 1, actualInputDim - 1])
+            let nextFeatures = MLX.concatenated([currentVal, rest], axis: -1)
             lastHidden = inputProj(nextFeatures)
 
             for (i, layer) in layers.enumerated() {

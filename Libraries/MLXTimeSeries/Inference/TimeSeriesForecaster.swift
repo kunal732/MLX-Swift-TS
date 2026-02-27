@@ -109,8 +109,8 @@ public class TimeSeriesForecaster {
         // Sanitize weight keys
         weights = model.sanitize(weights: weights)
 
-        // Determine target dtype
-        let targetDtype: DType = .float16
+        // Determine target dtype — models can request float32 for numerical stability
+        let targetDtype = model.inferenceDtype
         for (key, value) in weights {
             if value.dtype != targetDtype && value.ndim >= 2 {
                 weights[key] = value.asType(targetDtype)

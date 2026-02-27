@@ -588,29 +588,50 @@ public class ChronosModel: Module, TimeSeriesModel {
         let tokenEmbeddings = shared(tokens)
         let encoderOutput = encoder(tokenEmbeddings)
 
-        // Decode autoregressively
+        // Chronos was designed for stochastic inference: generate multiple samples
+        // and average them. Greedy/deterministic decoding collapses to the mode.
         let predLength = predictionLength
-        var decoderInput = MLXArray([Int32(1)]).reshaped(1, 1)
-        decoderInput = MLX.broadcast(decoderInput, to: [series.dim(0), 1])
+        let numSamples = config.chronosConfig.numSamples  // typically 20
+        let temperature = config.chronosConfig.temperature
+        let B = series.dim(0)
 
-        var allLogits = [MLXArray]()
+        var samplePredictions = [MLXArray]()  // each: [B, predLength]
 
-        for _ in 0 ..< predLength {
-            let decoderEmbed = shared(decoderInput)
-            let decoderOutput = decoder(decoderEmbed, encoderOutput: encoderOutput, caches: caches)
-            let logits = lmHead(decoderOutput)  // [B, 1, vocabSize]
-            let stepLogits = logits[.ellipsis, (logits.dim(1) - 1), 0...]
-            allLogits.append(stepLogits)
+        for _ in 0 ..< numSamples {
+            // Fresh caches for each sample
+            let sampleCaches = newCaches()
+            var decoderInput = MLXArray([Int32(1)]).reshaped(1, 1)
+            decoderInput = MLX.broadcast(decoderInput, to: [B, 1])
 
-            // Greedy: take argmax as next input
-            let nextToken = MLX.argMax(stepLogits, axis: -1).asType(.int32)
-            decoderInput = nextToken.expandedDimensions(axis: -1)
+            var sampleLogits = [MLXArray]()
+
+            for step in 0 ..< predLength {
+                let decoderEmbed = shared(decoderInput)
+                let decoderOutput = decoder(
+                    decoderEmbed, encoderOutput: encoderOutput,
+                    caches: sampleCaches, stepOffset: step)
+                let logits = lmHead(decoderOutput)
+                let stepLogits = logits[0..., (logits.dim(1) - 1), 0...]
+                sampleLogits.append(stepLogits)
+
+                // Sample next token via Gumbel-max trick (temperature sampling)
+                let scaledLogits = stepLogits.asType(DType.float32) / temperature
+                let noise = MLXRandom.uniform(low: Float(1e-10), high: Float(1.0 - 1e-10),
+                                              [B, config.vocabSize])
+                let gumbel = -MLX.log(-MLX.log(noise))
+                let nextToken = MLX.argMax(scaledLogits + gumbel, axis: -1).asType(DType.int32)
+                decoderInput = nextToken.expandedDimensions(axis: -1)
+            }
+
+            let stackedSample = MLX.stacked(sampleLogits, axis: 1)  // [B, predLength, vocabSize]
+            let sampleMean = tokenizer.decodeMean(logits: stackedSample, scale: scale)
+            samplePredictions.append(sampleMean)
         }
 
-        // Decode logits to continuous values
-        let stackedLogits = MLX.stacked(allLogits, axis: 1)  // [B, predLength, vocabSize]
-        let mean = tokenizer.decodeMean(logits: stackedLogits, scale: scale)
-        // Add back variable dimension: [B, predLength] -> [B, 1, predLength]
+        // Average across samples: [B, predLength]
+        let allSamples = MLX.stacked(samplePredictions, axis: 0)  // [numSamples, B, predLength]
+        let mean = allSamples.mean(axis: 0)  // [B, predLength]
+
         let meanOut = mean.expandedDimensions(axis: 1)
 
         return TimeSeriesPrediction(
@@ -644,6 +665,10 @@ public class ChronosModel: Module, TimeSeriesModel {
 
         return result
     }
+
+    // T5 models with small layer norm weights (~0.057) need float32 to keep
+    // attention layers numerically effective. float16 makes them collapse.
+    public var inferenceDtype: DType { .float32 }
 
     public func newCaches() -> [TimeSeriesKVCache?] {
         (0 ..< config.numDecoderLayers).map { _ in TimeSeriesKVCache() }
@@ -701,10 +726,13 @@ class ChronosDecoder: Module {
     func callAsFunction(
         _ x: MLXArray,
         encoderOutput: MLXArray,
-        caches: [TimeSeriesKVCache?]
+        caches: [TimeSeriesKVCache?],
+        stepOffset: Int = 0
     ) -> MLXArray {
         let L = x.dim(1)
-        let selfPositionBias = relBias(queryLength: L, keyLength: L)
+        // With KV caching, keys = cached tokens + current token.
+        // Use the correct key length so position biases reflect actual positions.
+        let selfPositionBias = relBias(queryLength: L, keyLength: stepOffset + L)
 
         var h = x
         for (i, block) in blocks.enumerated() {

@@ -24,8 +24,16 @@ public protocol TimeSeriesModel: Module {
     /// Remap weight keys from the original framework's conventions to MLXNN conventions.
     func sanitize(weights: [String: MLXArray]) -> [String: MLXArray]
 
+    /// Preferred weight dtype for inference. Defaults to float16.
+    /// Models that require higher precision (e.g. T5-based) can override to float32.
+    var inferenceDtype: DType { get }
+
     /// Create fresh KV caches for this model's architecture.
     func newCaches() -> [TimeSeriesKVCache?]
+}
+
+public extension TimeSeriesModel {
+    var inferenceDtype: DType { .float16 }
 }
 
 /// Unified forecast output from any time series model.

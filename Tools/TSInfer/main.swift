@@ -42,7 +42,7 @@ guard hfPath != nil || mlxPath != nil else {
 let T = 100
 let input: [Float] = (0..<T).map { i in
     let x = Float(i) / Float(T)
-    return 50 + 20 * sin(2 * .pi * x * 3) + Float.random(in: -2...2)
+    return 50 + 20 * sin(2 * .pi * x * 3)
 }
 
 print("Input: \(T) samples, range [\(input.min()!.rounded())...\(input.max()!.rounded())]")
